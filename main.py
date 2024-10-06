@@ -13,7 +13,7 @@ allow_sleep = False
 is_tz = timezone('Israel')
 
 fps = 20.0
-video_length = 5 # seconds
+video_length = 10 # seconds
 
 def is_time_to_sleep(dt):
     start_minutes =  7 * 60 + 30 #  7:30
@@ -66,14 +66,15 @@ def run_main_loop(vc, ser):
                 video_out.write(frame)
 
                 if dt > video_end_dt:
-                    video_out.release()
+                    utils.save_video(video_out, video_fpath)
                     video_out = None
             else:
                 recording_flag = False
 
                 if utils.recording_requested():
+                    video_fpath = utils.get_video_fpath(dt)
                     video_end_dt = dt + timedelta(seconds=video_length)
-                    video_out = utils.get_video_writer(vc, dt, fps)
+                    video_out = utils.get_video_writer(vc, fps)
 
             if utils.both_steps_filled(frame, prev_frame, ref_frame):
                 if not glass_transparent:

@@ -12,12 +12,14 @@ video_fext = "mp4"
 
 cwd = Path.cwd()
 data_dpath = cwd / "data"
-videos_dpath = data_dpath / "videos"
 ref_frames_dpath = data_dpath / "ref_frames"
+videos_dpath = data_dpath / "videos"
 requests_dpath = data_dpath / "requests"
 
 update_ref_frame_fpath = requests_dpath / "update_ref"
 recording_fpath = requests_dpath / "record"
+
+recording_video_fpath = videos_dpath / f"recording.{video_fext}"
 
 log_fpath = data_dpath / "log"
 error_fpath = data_dpath / "error"
@@ -88,11 +90,16 @@ def save_ref_frame(frame, dt):
     fpath = ref_frames_dpath / get_filename(ref_frame_fname, dt, frame_fext)
     cv2.imwrite(fpath, frame)
 
-def get_video_writer(vc, dt, fps):
-    w, h = get_resolution(vc)
+def get_video_fpath(dt):
+    return videos_dpath / get_filename(video_fname, dt, video_fext)
 
-    fpath = videos_dpath / get_filename(video_fname, dt, video_fext)
-    return cv2.VideoWriter(fpath, fourcc, fps, (w, h))
+def get_video_writer(vc, fps):
+    w, h = get_resolution(vc)
+    return cv2.VideoWriter(recording_video_fpath, fourcc, fps, (w, h))
+
+def save_video(video_writer, fpath):
+    video_writer.release()
+    recording_video_fpath.rename(fpath)
 
 def create_error_file(text):
     with error_fpath.open('w') as f:
