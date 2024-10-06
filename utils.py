@@ -1,7 +1,7 @@
-from datetime import datetime
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
 ref_frame_fname = "ref_frame"
@@ -19,6 +19,7 @@ requests_dpath = data_dpath / "requests"
 update_ref_frame_fpath = requests_dpath / "update_ref"
 recording_fpath = requests_dpath / "record"
 
+log_fpath = data_dpath / "log"
 error_fpath = data_dpath / "error"
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -42,6 +43,7 @@ def prepare_folders():
     requests_dpath.mkdir(exist_ok=True)
     remove_file(update_ref_frame_fpath)
     remove_file(recording_fpath)
+    remove_file(error_fpath)
 
 def get_resolution(vc):
     w = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -62,7 +64,7 @@ def recording_requested():
     
     return False
 
-def both_steps_filled():
+def both_steps_filled(frame, prev_frame, ref_frame):
     return False
     #difference_frame = cv2.absdiff(reference_frame, current_frame)
 
@@ -95,3 +97,11 @@ def get_video_writer(vc, dt, fps):
 def create_error_file(text):
     with error_fpath.open('w') as f:
         f.write(text)
+
+def set_glass_transparent(ser, flag):
+    if flag:
+        cmd = "1"
+    else:
+        cmd = "0"
+
+    #ser.write(cmd.encode())
