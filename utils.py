@@ -21,6 +21,9 @@ recording_fpath = requests_dpath / "record"
 
 recording_video_fpath = videos_dpath / f"recording.{video_fext}"
 
+manual_mode_fpath = data_dpath / "manual_mode"
+manual_state_on_fpath = data_dpath / "manual_state_on"
+
 log_fpath = data_dpath / "log"
 error_fpath = data_dpath / "error"
 
@@ -66,9 +69,15 @@ def recording_requested():
     
     return False
 
+def request_recording():
+    if recording_video_fpath.is_file():
+        return
+
+    recording_fpath.touch()
+
 def both_steps_filled(frame, prev_frame, ref_frame):
-    return False
     #difference_frame = cv2.absdiff(reference_frame, current_frame)
+    return False
 
 def get_ref_frame(vc):
     w, h = get_resolution(vc)
@@ -87,19 +96,33 @@ def get_ref_frame(vc):
     return frame
 
 def save_ref_frame(frame, dt):
+    print(frame.shape)
     fpath = ref_frames_dpath / get_filename(ref_frame_fname, dt, frame_fext)
     cv2.imwrite(fpath, frame)
 
 def get_video_fpath(dt):
     return videos_dpath / get_filename(video_fname, dt, video_fext)
 
-def get_video_writer(vc, fps):
+def get_video_writer(vc):
     w, h = get_resolution(vc)
+    fps = vc.get(cv2.CAP_PROP_FPS)
     return cv2.VideoWriter(recording_video_fpath, fourcc, fps, (w, h))
 
 def save_video(video_writer, fpath):
     video_writer.release()
     recording_video_fpath.rename(fpath)
+
+def manual_mode_enabled():
+    if manual_mode_fpath.is_file():
+        return True
+
+    return False
+
+def manual_state_on():
+    if manual_state_on_fpath.is_file():
+        return True
+
+    return False
 
 def create_error_file(text):
     with error_fpath.open('w') as f:
