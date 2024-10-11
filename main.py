@@ -1,156 +1,205 @@
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime
 from pytz import timezone
 import time
 import traceback
 
 import cv2
-import serial
 
+import camera
 import utils
 
-allow_sleep = False
 is_tz = timezone('Israel')
 
-video_length = 10 # seconds
+vc = camera.get_camera()
 
-def is_time_to_sleep(dt):
-    start_minutes =  7 * 60 + 30 #  7:30
-    end_minutes   = 23 * 60 +  0 # 23:00
-    
-    minutes = dt.hour * 60 + dt.minute
-    
-    if (minutes < start_minutes) or (minutes > end_minutes):
-        return True
-
-    return False
-
-def run_main_loop(vc, ser):
+def main():
     try:
         utils.prepare_folders()
 
         dt = datetime.now(is_tz)
 
-        ref_frame = utils.get_ref_frame(vc)
-        frame = ref_frame
+        reference_frame = utils.get_last_reference_frame(vc)
+        ref_part_l, ref_part_r = camera.get_parts(reference_frame)
 
-        video_out = None
+        thr_l, thr_r = utils.get_thresholds()
 
-        both_steps_filled_flag = False
-        glass_transparent = False
-        utils.set_glass_transparent(ser, False)
+        part_l_state = False
+        part_r_state = False
+        parts_state = False
+        stable_state_dt = dt
 
-        state_dt = dt
-        glass_transparent_changed_dt = dt
+        utils.set_glass_state(False)
+        glass_state_on = False
+        glass_state_changed_dt = dt
 
-        log_file = utils.log_fpath.open('w')
+        mode_manual = utils.is_mode_manual()
+
+        stable_state_l_dt = dt
+        stable_state_r_dt = dt
+
+        part_l_i = 0
+        part_r_i = 0
+
+        log_file = utils.get_log_fpath(dt).open('w')
+        n_log_rows = 0
 
         while True:
             prev_dt = dt
             dt = datetime.now(is_tz)
+            dt_str = dt.strftime('%Y%m%dT%H%M%S.%f')
 
-            if allow_sleep and is_time_to_sleep():
-                time.sleep(5)
+            # State defining whether the system should work or be idle.
+            state_on = utils.is_state_on():
+            if not state_on:
+                time.sleep(1)
                 continue
 
-            prev_frame = frame
+            # Reading frame.
             flag, frame = vc.read()
             if not flag:
                 raise Exception("Failed to read frame!")
-
-            update_ref_frame_flag = utils.update_ref_frame_requested()
-            if update_ref_frame_flag:
-                ref_frame = frame
-                utils.save_ref_frame(ref_frame, dt)
-
-            if video_out:
-                recording_flag = True
-
-                video_out.write(frame)
-
-                utils.recording_requested() # this is just to remove request file if present
-
-                if dt > video_end_dt:
-                    utils.save_video(video_out, video_fpath)
-                    video_out = None
-            else:
-                recording_flag = False
-
-                if utils.recording_requested():
-                    video_fpath = utils.get_video_fpath(dt)
-                    video_end_dt = dt + timedelta(seconds=video_length)
-                    video_out = utils.get_video_writer(vc)
-
-            if dt > glass_transparent_changed_dt + timedelta(seconds=3):
-                manual_mode_flag = utils.manual_mode_enabled()
-                if manual_mode_flag:
-                    manual_state_on_flag = utils.manual_state_on()
-                    if manual_state_on_flag and not glass_transparent:
-                        utils.set_glass_transparent(ser, True)
-                        glass_transparent = True
-                        glass_transparent_changed_dt = dt
-                    if not manual_state_on_flag and glass_transparent:
-                        utils.set_glass_transparent(ser, False)
-                        glass_transparent = False
-                        glass_transparent_changed_dt = dt
-                else:
-                    prev_both_steps_filled_flag = both_steps_filled_flag
-                    both_steps_filled_flag = utils.both_steps_filled(frame, prev_frame, ref_frame)
-
-                    if prev_both_steps_filled_flag != both_steps_filled_flag:
-                        state_dt = dt
-
-                    if (dt - state_dt).total_seconds() > 1:
-                        if both_steps_filled_flag and not glass_transparent:
-                            utils.set_glass_transparent(ser, True)
-                            glass_transparent = True
-                            glass_transparent_changed_dt = dt
-                            utils.request_recording()
-                        if not both_steps_filled_flag and glass_transparent:
-                            utils.set_glass_transparent(ser, False)
-                            glass_transparent = False
-                            glass_transparent_changed_dt = dt
-
-            dt_str = dt.strftime("%Y%m%dT%H%M%S")
-            delta_str = f"{(dt - prev_dt).total_seconds()*1000:.1f}"
             
-            line = (f"{dt_str},"
-                    f"{delta_str},"
-                    f"{update_ref_frame_flag},"
-                    f"{recording_flag},"
-                    f"{manual_mode_flag},"
-                    f"{glass_transparent}\n")
-            log_file.write(line)
+            part_l, part_r = utils.get_parts(frame)
+
+            # Checking requests.
+            frame_requested = utils.frame_requested()
+            if frame_requested:
+                utils.save_frame(frame, dt, reason='request')
+
+            reference_frame_requested = utils.reference_frame_requested()
+            if reference_frame_requested:
+                utils.save_reference_frame(reference_frame, dt, update=False)
+            
+            update_reference_frame_requested = utils.update_reference_frame_requested()
+            if update_reference_frame_requested:
+                reference_frame = frame
+                ref_part_l, ref_part_r = camera.get_parts(reference_frame)
+                utils.save_reference_frame(reference_frame, dt, update=True)
+                utils.save_reference_frame(reference_frame, dt, update=False)
+
+            update_thresholds_requested, (thr_l_new, thr_r_new) = utils.update_thresholds_requested()
+            if update_thresholds_requested:
+                thr_l, thr_r = thr_l_new, thr_r_new
+                save_thresholds(thr_l, thr_r)
+
+            # Updating states.
+            prev_part_l_state = part_l_state
+            prev_part_r_state = part_r_state
+            prev_parts_state = parts_state
+
+            part_l_state, part_r_state = utils.get_parts_state(part_l,
+                                                               part_r,
+                                                               ref_part_l,
+                                                               ref_part_r)
+            parts_state = part_l_state and part_r_state
+
+            # Defining action.
+            action = None
+            if (dt - glass_state_changed_dt).total_seconds() > config.TRANSITION_DURATION:
+                prev_mode_manual = mode_manual
+                mode_manual = utils.is_mode_manual()
+
+                if mode_manual:
+                    if prev_mode_manual:
+                        glass_state_on_to_set = utils.glass_state_on_to_set()
+                    else:
+                        if glass_state_on:
+                            glass_state_on_to_set = True
+                            utils.set_glass_state_on(True)
+                        else:
+                            glass_state_on_to_set = False
+                            utils.set_glass_state_on(False)
+
+                    if glass_state_on_to_set and not glass_state_on:
+                        action = 1
+                    elif not glass_state_on_to_set and glass_state_on:
+                        action = 0
+                else:
+                    if prev_parts_state != parts_state:
+                        stable_state_dt = dt
+
+                    stable_state_td = (dt - stable_state_dt).total_seconds()
+                    if parts_state and not glass_state_on and stable_state_td > config.ON_DELAY:
+                        action = 1
+                    if not parts_state and glass_state_on and stable_state_td > config.OFF_DELAY:
+                        action = 0
+
+                if action: 
+                    if action == 1:
+                        utils.set_glass_state(True)
+                        glass_state_on = True
+                        glass_state_changed_dt = dt
+                        utils.save_frame(frame, dt, reason='on')
+
+                        log_file.write(f"{dt_str},action,{action}")
+                        n_log_rows += 1
+                    elif action == 0:
+                        utils.set_glass_state(False)
+                        glass_state_on = False
+                        glass_state_changed_dt = dt
+                        utils.save_frame(frame, dt, reason='off')
+                        
+                        log_file.write(f"{dt_str},action,{action}")
+                        n_log_rows += 1
+
+                if not mode_manual:
+                    if prev_part_l_state != part_l_state:
+                        stable_state_l_dt = dt
+                    stable_state_l_td = (dt - stable_state_dt_l).total_seconds()
+
+                    if prev_part_r_state != part_r_state:
+                        stable_state_r_dt = dt
+                    stable_state_r_td = (dt - stable_state_dt_r).total_seconds()
+
+                    if part_l_state and part_l_i in [0,2] and stable_state_l_td > config.ON_DELAY:
+                        part_l_i = 1
+                        part_l_frame = frame
+                    elif not part_l_state and part_l_i == 1 and stable_state_l_td > config.OFF_DELAY:
+                        part_l_i = 2
+                    elif part_l_i == 2:
+                        part_l_i = 0
+
+                    if part_r_state and part_r_i in [0,2] and stable_state_r_td > config.ON_DELAY:
+                        part_r_i = 1
+                        part_r_frame = frame
+                    elif not part_r_state and part_r_i == 1 and stable_state_r_td > config.OFF_DELAY:
+                        part_r_i = 2
+                    elif part_r_i == 2:
+                        part_r_i = 0
+
+                    if part_l_i == 2 and part_r_i == 0:
+                        save_frame(part_l_frame, dt, reason='single_l')
+                        part_l_i = 0
+                        part_r_i = 0
+                    elif part_r_i == 2 and part_l_i == 0:
+                        save_frame(part_r_frame, dt, reason='single_r')
+                        part_l_i = 0
+                        part_r_i = 0
+
+            if (dt - temperature_dt).total_seconds() > 60:
+                t_cpu = utils.get_temperature()
+                log_file.write(f"{dt_str},t_cpu,{t_cpu:.1f}")
+                n_log_rows += 1
+                temperature_dt = dt
+
+            if n_log_rows > 9999:
+                log_file.close()
+                log_file = utils.get_log_fpath(dt).open('w')
+                n_log_rows = 0
 
     except Exception as e:
         vc.release()
-
-        if video_out is not None:
-            video_out.release()
-            video_out = None
-
         log_file.close()
-
         raise(e) from None
         
 
 if __name__ == '__main__':
     try:
-        ser = serial.Serial("/dev/ttyUSB0")
-        ser.baudrate = 115200
-
-        vc = cv2.VideoCapture(0)
-        vc.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
-        vc.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        vc.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080);
-        vc.set(cv2.CAP_PROP_FPS, 20)
-        vc.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-        vc.set(cv2.CAP_PROP_EXPOSURE, 157)
-
-        if not vc.isOpened():
-            raise Exception("Camera is NOT opened!")
-
-        run_main_loop(vc, ser)
+        main()
 
     except KeyboardInterrupt:
         print('\nExit\n')
