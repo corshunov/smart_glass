@@ -1,7 +1,11 @@
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import cv2
+
 import config
+import utils
 
 def get_camera(i=0):
     vc = cv2.VideoCapture(i)
@@ -21,6 +25,22 @@ def get_resolution(vc):
     w = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
     return (w, h)
+
+def get_last_reference_frame(vc):
+    w, h = get_resolution(vc)
+    default_frame = np.zeros((h, w, 3), dtype=np.uint8)
+    
+    files = sorted(utils.reference_frames_dpath.glob(f"*{config.PICTURE_EXT}"))
+    if len(files) > 0:
+        fpath = files[-1]
+        frame = cv2.imread(fpath)
+
+        if (frame.shape[0] != h) or (frame.shape[1] != w) or (frame.shape[2] != 3):
+            frame = default_frame
+    else:
+        frame = default_frame
+
+    return frame
 
 def rotate_frame(frame, angle):
     h, w = frame.shape[:2]
@@ -66,14 +86,14 @@ def get_part_level(frame, ref_frame):
     level = int(diff.mean())
     return level
 
-def get_parts_state(part_l, part_r, ref_part_l, ref_part_r):
+def get_parts_state(part_l, part_r, ref_part_l, ref_part_r, thr_l, thr_r):
     level_l = get_part_level(part_l, ref_part_l)
     level_r = get_part_level(part_r, ref_part_r)
 
-    l = level_l > config.THR_L
-    r = level_r > config.THR_R
+    l = level_l > thr_l
+    r = level_r > thr_r
 
-    dt_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S.%f")
-    print(f"[{dt_str}]    {level_l:3} ({config.THR_L})    {level_r:3} ({config.THR_R})")
+    dt_str = datetime.now(config.IS_TZ).strftime("%d.%m.%Y %H:%M:%S.%f")
+    print(f"[{dt_str}]    {level_l:3} ({thr_l})    {level_r:3} ({thr_r})")
 
     return l, r

@@ -1,3 +1,7 @@
+from pytz import timezone
+
+IS_TZ = timezone('Israel')
+
 REAL_W = 1920
 REAL_H = 1080
 FPS = 20
@@ -14,6 +18,8 @@ LRUD_BEFORE_ROT_R = (130, 540, 1200, 1420)
 ANGLE_R = -3
 LRUD_AFTER_ROT_R = (25, 390, 25, 195)
 
+PICTURE_EXT = "jpg"
+
 THR_L = 20
 THR_R = 35
 
@@ -21,3 +27,5 @@ ON_DELAY = 0.45 # seconds
 OFF_DELAY = 0.5 # seconds
 
 TRANSITION_DURATION = 3 # seconds
+
+BOT_DELAY_ON_START = 10
