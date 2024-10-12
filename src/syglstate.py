@@ -7,8 +7,8 @@ import syfiles
 ser = serial.Serial(c.SERIAL_DEVICE)
 ser.baudrate = 115200
 
-TRANSPARENT = "TRANSPARENT"
-OPAQUE = "OPAQUE"
+ON = "ON"
+OFF = "OFF"
 
 def log(state, dt=None):
     if dt is None:
@@ -20,36 +20,36 @@ def log(state, dt=None):
         f.write(f"{dt_str},glstate,{state}\n")
 
 def get():
-    if syfiles.glstate_transparent_fpath.is_file():
-        return TRANSPARENT
+    if syfiles.glstate_on_fpath.is_file():
+        return ON
     else:
-        return OPAQUE
+        return OFF
 
 def set(state):
-    if state == TRANSPARENT:
+    if state == ON:
         ser.write(b'1')
-        syfiles.create_file(syfiles.glstate_transparent_fpath)
-    elif state == OPAQUE:
+        syfiles.create_file(syfiles.glstate_on_fpath)
+    elif state == OFF:
         ser.write(b'0')
-        syfiles.remove_file(syfiles.glstate_transparent_fpath)
+        syfiles.remove_file(syfiles.glstate_on_fpath)
     else:
         raise Exception("Invalid 'glstate' argument.")
 
 def set_present():
-    if syfiles.set_glstate_transparent_fpath.is_file():
-        syfiles.remove_file(syfiles.set_glstate_transparent_fpath)
-        syfiles.remove_file(syfiles.set_glstate_opaque_fpath) # in case it is also present
-        return True, TRANSPARENT
-    elif syfiles.set_systate_off_fpath.is_file():
-        syfiles.remove_file(syfiles.set_glstate_opaque_fpath)
-        return True, OPAQUE
+    if syfiles.set_glstate_on_fpath.is_file():
+        syfiles.remove_file(syfiles.set_glstate_on_fpath)
+        syfiles.remove_file(syfiles.set_glstate_off_fpath) # in case it is also present
+        return True, ON
+    elif syfiles.set_glstate_off_fpath.is_file():
+        syfiles.remove_file(syfiles.set_glstate_off_fpath)
+        return True, OFF
 
     return False, None
 
 def set_request(state):
-    if state == TRANSPARENT:
-        syfiles.create_file(syfiles.set_glstate_transparent_fpath)
-    elif state == OPAQUE:
-        syfiles.create_file(syfiles.set_glstate_opaque_fpath)
+    if state == ON:
+        syfiles.create_file(syfiles.set_glstate_on_fpath)
+    elif state == OFF:
+        syfiles.create_file(syfiles.set_glstate_off_fpath)
     else:
         raise Exception("Invalid 'state' argument.")

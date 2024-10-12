@@ -15,7 +15,7 @@ def log(thr_l, thr_r, dt=None):
 
     fpath = syfiles.get_log_path(dt)
     with fpath.open('a') as f:
-        f.write(f"{dt_str},thresholds,{thr_l}-{thr_r}\n")
+        f.write(f"{dt_str},thresholds,{thr_l};{thr_r}\n")
 
 def save(thr_l, thr_r):
     with syfiles.thresholds_fpath.open('w') as f:
@@ -27,6 +27,9 @@ def save(thr_l, thr_r):
 def get():
     if syfiles.thresholds_fpath.is_file():
         try:
+            with syfiles.thresholds_fpath.open('r') as f:
+                text = f.read()
+
             thr_l, thr_r = parse(text)
             return thr_l, thr_r
         except:

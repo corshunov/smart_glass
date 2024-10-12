@@ -118,8 +118,8 @@ def save_frame_present():
 def save_frame_request():
     syfiles.create_file(syfiles.save_frame_fpath)
 
-def update_and_save_reference_frame_present():
+def update_save_reference_frame_present():
     return syfiles.remove_file(syfiles.update_save_reference_frame_fpath)
 
-def update_and_save_reference_frame_request():
+def update_save_reference_frame_request():
     syfiles.create_file(syfiles.update_save_reference_frame_fpath)

@@ -12,8 +12,19 @@ import sythr
 
 syfiles.reconfigure_stdout()
 
+def log(state, dt=None):
+    if dt is None:
+        dt = sydt.now()
+    dt_str = sydt.get_str(dt)
+
+    fpath = syfiles.get_log_path(dt)
+    with fpath.open('a') as f:
+        f.write(f"{dt_str},service,{state}\n")
+
 def main():
     dt = sydt.now()
+
+    log("start", dt)
 
     syfiles.prepare_folders()
 
@@ -24,11 +35,12 @@ def main():
     vc = sycam.get()
 
     try:
-        systate.set(systate.ON)
+        state = systate.ON
+        systate.set(state)
 
         mode = symode.get()
 
-        glstate = syglstate.OPAQUE
+        glstate = syglstate.OFF
         syglstate.set(glstate)
         glstate_dt = dt
 
@@ -75,7 +87,7 @@ def main():
 
             if state == systate.OFF:
                 print(f"[{dt_str}]    System is OFF")
-                sleep(1)
+                sydt.sleep(1)
                 continue
 
             # Mode.
@@ -117,7 +129,6 @@ def main():
 
             level_l = sycam.get_part_level(part_l, ref_part_l)
             level_r = sycam.get_part_level(part_r, ref_part_r)
-            print(f"[{dt_str}]    {level_l:3}  ({thr_l})     {level_r:3}  ({thr_r})")
             
             part_l_state = level_l > thr_l
             part_r_state = level_r > thr_r
@@ -137,19 +148,25 @@ def main():
                     else:
                         glstate = syglstate.get()
                 else:
+                    # Invoked just to remove 'set_glstate' files which are not relevant in AUTO mode.
+                    syglstate.set_present() 
+
                     if prev_parts_state != parts_state:
                         parts_state_dt = dt
 
                     parts_state_delta = (dt - parts_state_dt).total_seconds()
-                    if parts_state and prev_glstate == syglstate.OPAQUE and parts_state_delta > c.ON_DELAY:
-                        glstate = syglstate.TRANSPARENT
-                    elif not parts_state and prev_glstate == syglstate.TRANSPARENT and parts_state_delta > c.OFF_DELAY:
-                        glstate = syglstate.OPAQUE
+                    if parts_state and prev_glstate == syglstate.OFF and parts_state_delta > c.ON_DELAY:
+                        glstate = syglstate.ON
+                    elif not parts_state and prev_glstate == syglstate.ON and parts_state_delta > c.OFF_DELAY:
+                        glstate = syglstate.OFF
 
                 if prev_glstate != glstate:
                     syglstate.set(glstate)
                     glstate_dt = dt
                     sycam.save_frame(frame, dt, reason=f"GLASS_{glstate}")
+
+            # Print.
+            print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) - R {level_r:3} ({thr_r}) - {glstate}")
 
 #                elif mode = "AUTO":
 #                    if prev_part_l_state != part_l_state:
@@ -186,9 +203,8 @@ def main():
 #                        part_r_i = 0
 
     except Exception as e:
-        print('inside exception')
         vc.release()
-        raise(e) from None
+        raise(e) from e
         
 
 if __name__ == '__main__':
@@ -196,8 +212,10 @@ if __name__ == '__main__':
         main()
 
     except KeyboardInterrupt:
+        log("end")
         print('\nExit\n')
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
         syfiles.output_error(tb)
+        log("error")

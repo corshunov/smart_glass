@@ -28,6 +28,8 @@ def set(mode):
     else:
         raise Exception("Invalid 'mode' argument.")
 
+    log(mode)
+
 def set_present():
     if syfiles.set_mode_manual_fpath.is_file():
         syfiles.remove_file(syfiles.set_mode_manual_fpath)
