@@ -2,6 +2,7 @@ from pathlib import Path
 import shutil
 import sys
 
+import sycfg as c
 import sydt
 
 root_dpath = Path(__file__).parent.parent
@@ -10,8 +11,8 @@ logs_dpath = data_dpath / "logs"
 state_dpath = data_dpath / "state"
 frames_dpath = data_dpath / "frames"
 requests_dpath = data_dpath / "requests"
-system_requests_dpath / requests_dpath / "system"
-bot_requests_dpath / requests_dpath / "bot"
+system_requests_dpath = requests_dpath / "system"
+bot_requests_dpath = requests_dpath / "bot"
 
 error_fpath = root_dpath / "error"
 
@@ -19,23 +20,23 @@ systate_on_fpath = state_dpath / "systate_on"
 mode_manual_fpath = state_dpath / "mode_manual"
 glstate_transparent_fpath = state_dpath / "glstate_transparent"
 thresholds_fpath = state_dpath / "thresholds"
-reference_frame_fpath = state_dpath / f"reference_frame.{PICTURE_EXT}"
+reference_frame_fpath = state_dpath / f"reference_frame.{c.PICTURE_EXT}"
 
-update_systate_on_fpath = system_requests_dpath / "update_systate_on"
-update_systate_off_fpath = system_requests_dpath / "update_systate_off"
+set_state_on_fpath = system_requests_dpath / "set_state_on"
+set_state_off_fpath = system_requests_dpath / "set_state_off"
 
-update_mode_manual_fpath = system_requests_dpath / "update_mode_manual"
-update_mode_auto_fpath = system_requests_dpath / "update_mode_auto"
+set_mode_manual_fpath = system_requests_dpath / "set_mode_manual"
+set_mode_auto_fpath = system_requests_dpath / "set_mode_auto"
 
-update_glstate_transparent_fpath = system_requests_dpath / "update_glstate_transparent"
-update_glstate_opaque_fpath = system_requests_dpath / "update_glstate_opaque"
+set_glstate_transparent_fpath = system_requests_dpath / "set_glstate_transparent"
+set_glstate_opaque_fpath = system_requests_dpath / "set_glstate_opaque"
 
-request_frame_fpath = system_requests_dpath / "request_frame"
-update_reference_frame_fpath = system_requests_dpath / "update_reference_frame"
+save_frame_fpath = system_requests_dpath / "save_frame"
+update_save_reference_frame_fpath = system_requests_dpath / "update_save_reference_frame"
 
 update_thresholds_fpath = system_requests_dpath / "update_thresholds"
 
-request_reference_frame_fpath = bot_requests_dpath / "request_reference_frame"
+save_reference_frame_fpath = bot_requests_dpath / "save_reference_frame"
 
 temp_source_fpath = Path("/sys/class/hwmon/hwmon0/temp1_input")
 
@@ -47,8 +48,8 @@ def output_error(text):
         f.write(text)
 
 def get_filename(name, dt, ext, pattern="%Y%m%d_%H%M%S"):
-    dt_str = sydt.get_str(dt)
-    return f"{fname}__{dt_str}.{fext}"
+    dt_str = sydt.get_str(dt, pattern)
+    return f"{name}__{dt_str}.{ext}"
 
 def get_log_path(dt):
     return logs_dpath / get_filename("log", dt, "csv", "%Y%m%d")

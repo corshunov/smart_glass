@@ -2,7 +2,7 @@ import time
 from datetime import datetime
 from pytz import timezone
 
-import sycgf as c
+import sycfg as c
 
 TZ = timezone(c.TZ)
 
@@ -14,7 +14,7 @@ def now():
 
 def get_str(dt=None, pattern='%Y%m%dT%H%M%S.%f'):
     if dt is None:
-        dt = dtnow()
+        dt = now()
 
     return dt.strftime(pattern)
 

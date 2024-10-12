@@ -22,10 +22,29 @@ def get():
 
 def set(state):
     if state == ON:
-        create_file(syfiles.systate_on_fpath)
+        syfiles.create_file(syfiles.systate_on_fpath)
     elif state == OFF:
-        remove_file(syfiles.systate_on_fpath)
+        syfiles.remove_file(syfiles.systate_on_fpath)
     else:
-        raise Exception("Invalid 'systate' argument.")
+        raise Exception("Invalid 'state' argument.")
 
     log(state)
+
+def set_present():
+    if syfiles.set_systate_on_fpath.is_file():
+        syfiles.remove_file(syfiles.set_systate_on_fpath)
+        syfiles.remove_file(syfiles.set_systate_off_fpath) # in case it is also present
+        return True, ON
+    elif syfiles.set_systate_off_fpath.is_file():
+        syfiles.remove_file(syfiles.set_systate_off_fpath)
+        return True, OFF
+
+    return False, None
+
+def set_request(state):
+    if state == ON:
+        syfiles.create_file(syfiles.set_systate_on_fpath)
+    elif state == OFF:
+        syfiles.create_file(syfiles.set_systate_off_fpath)
+    else:
+        raise Exception("Invalid 'state' argument.")

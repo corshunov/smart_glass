@@ -17,7 +17,8 @@ def main():
 
     syfiles.prepare_folders()
 
-    sytemp.log_temperature(dt)
+    temp = sytemp.get()
+    sytemp.log(temp, dt)
     temp_dt = dt
 
     vc = sycam.get()
@@ -56,58 +57,85 @@ def main():
             dt = sydt.now()
             dt_str = sydt.get_str(dt)
 
-            # Logging temperature.
+            # Temperature.
             if (dt - temp_dt).total_seconds() >= 300:
                 temp = sytemp.get()
                 sytemp.log(temp, dt)
                 temp_dt = dt
 
-            # State defining whether the system should work or be idle.
-            if systate.get() == systate.OFF:
+            # State.
+            prev_state = state
+
+            flag, state_new = systate.set_present()
+            if flag:
+                systate.set(state_new)
+                state = state_new
+            else:
+                state = systate.get()
+
+            if state == systate.OFF:
+                print(f"[{dt_str}]    System is OFF")
                 sleep(1)
                 continue
 
-            # Reading frame.
+            # Mode.
+            prev_mode = mode
+
+            flag, mode_new = symode.set_present()
+            if flag:
+                symode.set(mode_new)
+                mode = mode_new
+            else:
+                mode = symode.get()
+
+            # Frame.
             flag, frame = vc.read()
             if not flag:
                 raise Exception("Failed to read frame.")
-            
-            part_l, part_r = sycam.get_parts(frame)
 
-            # Checking requests.
-            if sycam.request_frame_present():
+            # Frame requests.
+            if sycam.save_frame_present():
                 sycam.save_frame(frame, dt, reason='REQUEST')
 
-            if sycam.update_reference_frame_present():
+            if sycam.update_save_reference_frame_present():
                 reference_frame = frame
                 ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
                 sycam.save_frame(reference_frame, dt, reason='REFERENCE_UPDATE')
                 sycam.backup_reference_frame(reference_frame)
 
+            # Thresholds request.
             flag, (thr_l_new, thr_r_new) = sythr.update_thresholds_present()
             if flag:
+                sythr.save(thr_l_new, thr_r_new)
                 thr_l, thr_r = thr_l_new, thr_r_new
-                sythr.save(thr_l, thr_r)
 
-            # Updating states.
-            prev_mode = mode
-            mode = symode.get()
-
+            # Parts.
             prev_part_l_state = part_l_state
             prev_part_r_state = part_r_state
 
-            part_l_state, part_r_state = sycam.get_parts_state(
-                part_l, part_r, ref_part_l, ref_part_r, thr_l, thr_r)
+            part_l, part_r = sycam.get_parts(frame)
+
+            level_l = sycam.get_part_level(part_l, ref_part_l)
+            level_r = sycam.get_part_level(part_r, ref_part_r)
+            print(f"[{dt_str}]    {level_l:3}  ({thr_l})     {level_r:3}  ({thr_r})")
             
+            part_l_state = level_l > thr_l
+            part_r_state = level_r > thr_r
+
             prev_parts_state = parts_state
             parts_state = part_l_state and part_r_state
 
+            # Glass state.
             prev_glstate = glstate
 
-            # Defining glass state.
             if (dt - glstate_dt).total_seconds() > c.TRANSITION_DURATION:
                 if mode == symode.MANUAL:
-                    glstate = syglstate.get()
+                    flag, glstate_new = syglstate.set_present()
+                    if flag:
+                        syglstate.set(glstate_new)
+                        glstate = glstate_new
+                    else:
+                        glstate = syglstate.get()
                 else:
                     if prev_parts_state != parts_state:
                         parts_state_dt = dt

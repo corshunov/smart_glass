@@ -29,10 +29,12 @@ def get_default_reference_frame(vc):
     return np.zeros((h, w, 3), dtype=np.uint8)
 
 def get_reference_frame(vc):
-    w, h = get_resolution(vc)
-    frame = cv2.imread(syfiles.reference_frame_fpath)
-    if (frame.shape[0] == h) or (frame.shape[1] == w) or (frame.shape[2] == 3):
-        return frame
+    if syfiles.reference_frame_fpath.is_file():
+        frame = cv2.imread(syfiles.reference_frame_fpath)
+
+        w, h = get_resolution(vc)
+        if (frame.shape[0] == h) or (frame.shape[1] == w) or (frame.shape[2] == 3):
+            return frame
 
     raise Exception("No valid reference frame found.")
 
@@ -110,28 +112,14 @@ def get_part_level(frame, reference_frame):
     level = int(diff.mean())
     return level
 
-def get_parts_state(part_l, part_r,
-                    reference_part_l, reference_part_r,
-                    thr_l, thr_r):
-    level_l = get_part_level(part_l, reference_part_l)
-    level_r = get_part_level(part_r, reference_part_r)
+def save_frame_present():
+    return syfiles.remove_file(syfiles.save_frame_fpath)
 
-    l = level_l > thr_l
-    r = level_r > thr_r
+def save_frame_request():
+    syfiles.create_file(syfiles.save_frame_fpath)
 
-    dt_str = sydt.get_str(pattern="%d.%m.%Y %H:%M:%S.%f")
-    print(f"[{dt_str}]    {level_l:3}  ({thr_l})     {level_r:3}  ({thr_r})")
+def update_and_save_reference_frame_present():
+    return syfiles.remove_file(syfiles.update_save_reference_frame_fpath)
 
-    return l, r
-
-def request_frame_present():
-    return syfiles.remove_file(syfiles.request_frame_fpath)
-
-def request_frame():
-    syfiles.create_file(syfiles.request_frame_fpath)
-
-def update_reference_frame_present():
-    return syfiles.remove_file(syfiles.update_reference_frame_fpath)
-
-def update_reference_frame():
-    syfiles.create_file(syfiles.update_reference_frame_fpath)
+def update_and_save_reference_frame_request():
+    syfiles.create_file(syfiles.update_save_reference_frame_fpath)
