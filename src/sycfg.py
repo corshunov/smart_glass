@@ -1,6 +1,6 @@
-from pytz import timezone
+TZ = 'Israel'
 
-IS_TZ = timezone('Israel')
+SERIAL_DEVICE = "/dev/ttyUSB0"
 
 REAL_W = 1920
 REAL_H = 1080
@@ -23,9 +23,9 @@ PICTURE_EXT = "jpg"
 THR_L = 20
 THR_R = 35
 
+TRANSITION_DURATION = 3 # seconds
+
 ON_DELAY = 0.45 # seconds
 OFF_DELAY = 0.5 # seconds
-
-TRANSITION_DURATION = 3 # seconds
 
 BOT_DELAY_ON_START = 10

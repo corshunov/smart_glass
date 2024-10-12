@@ -4,6 +4,4 @@ __pycache__/
 
 /.venv/
 /error
-/logs/
 /data/
-/requests/

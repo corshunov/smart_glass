@@ -1,134 +1,127 @@
-import sys
-sys.stdout.reconfigure(line_buffering=True)
-
-from datetime import datetime
-import time
-import traceback
-
 import cv2
 
-import config
-import camera
-import utils
+import sycam
+import sycfg as c
+import sydt
+import syfiles
+import syglstate
+import symode
+import systate
+import sytemp
+import sythr
+
+syfiles.reconfigure_stdout()
 
 def main():
-    dt = datetime.now(config.IS_TZ)
-    temperature_dt = dt
+    dt = sydt.now()
 
-    utils.prepare_folders()
+    syfiles.prepare_folders()
 
-    vc = camera.get_camera()
+    sytemp.log_temperature(dt)
+    temp_dt = dt
+
+    vc = sycam.get()
 
     try:
-        utils.set_state("ON")
+        systate.set(systate.ON)
 
-        mode = utils.get_mode()
+        mode = symode.get()
 
-        glass_state = "OPAQUE"
-        utils.set_glass_state(glass_state)
-        glass_state_changed_dt = dt
+        glstate = syglstate.OPAQUE
+        syglstate.set(glstate)
+        glstate_dt = dt
 
-        reference_frame = camera.get_last_reference_frame(vc)
-        ref_part_l, ref_part_r = camera.get_parts(reference_frame)
+        try:
+            reference_frame = sycam.get_reference_frame(vc)
+        except:
+            reference_frame = sycam.get_default_reference_frame(vc)
 
-        thr_l, thr_r = utils.get_thresholds()
+        ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
+
+        thr_l, thr_r = sythr.get()
 
         part_l_state = False
         part_r_state = False
         parts_state = False
 
-        stable_state_l_dt = dt
-        stable_state_r_dt = dt
-        stable_state_dt = dt
+        part_l_state_dt = dt
+        part_r_state_dt = dt
+        parts_state_dt = dt
 
         part_l_i = 0
         part_r_i = 0
 
         while True:
             prev_dt = dt
-            dt = datetime.now(config.IS_TZ)
-            dt_str = dt.strftime('%Y%m%dT%H%M%S.%f')
+            dt = sydt.now()
+            dt_str = sydt.get_str(dt)
 
             # Logging temperature.
-            if (dt - temperature_dt).total_seconds() >= 300:
-                utils.log_temperature(dt)
-                temperature_dt = dt
+            if (dt - temp_dt).total_seconds() >= 300:
+                temp = sytemp.get()
+                sytemp.log(temp, dt)
+                temp_dt = dt
 
             # State defining whether the system should work or be idle.
-            state = utils.get_state()
-            if state == "OFF":
-                time.sleep(1)
+            if systate.get() == systate.OFF:
+                sleep(1)
                 continue
 
             # Reading frame.
             flag, frame = vc.read()
             if not flag:
-                raise Exception("Failed to read frame!")
+                raise Exception("Failed to read frame.")
             
-            part_l, part_r = camera.get_parts(frame)
+            part_l, part_r = sycam.get_parts(frame)
 
             # Checking requests.
-            frame_requested = utils.frame_requested()
-            if frame_requested:
-                utils.save_frame(frame, dt, reason='REQUEST')
+            if sycam.request_frame_present():
+                sycam.save_frame(frame, dt, reason='REQUEST')
 
-            update_reference_frame_requested = utils.update_reference_frame_requested()
-            if update_reference_frame_requested:
+            if sycam.update_reference_frame_present():
                 reference_frame = frame
-                ref_part_l, ref_part_r = camera.get_parts(reference_frame)
-                utils.save_reference_frame(reference_frame, dt)
-                utils.save_frame(reference_frame, dt, reason='REFERENCE_UPDATE')
+                ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
+                sycam.save_frame(reference_frame, dt, reason='REFERENCE_UPDATE')
+                sycam.backup_reference_frame(reference_frame)
 
-            reference_frame_requested = utils.reference_frame_requested()
-            if reference_frame_requested:
-                utils.save_frame(reference_frame, dt, reason='REFERENCE_REQUEST')
-
-            update_thresholds_requested, (thr_l_new, thr_r_new) = utils.update_thresholds_requested()
-            if update_thresholds_requested:
+            flag, (thr_l_new, thr_r_new) = sythr.update_thresholds_present()
+            if flag:
                 thr_l, thr_r = thr_l_new, thr_r_new
-                utils.save_thresholds(thr_l, thr_r)
+                sythr.save(thr_l, thr_r)
 
             # Updating states.
             prev_mode = mode
-            mode = utils.get_mode()
+            mode = symode.get()
 
             prev_part_l_state = part_l_state
             prev_part_r_state = part_r_state
 
-            part_l_state, part_r_state = camera.get_parts_state(part_l,
-                                                                part_r,
-                                                                ref_part_l,
-                                                                ref_part_r,
-                                                                thr_l,
-                                                                thr_r)
+            part_l_state, part_r_state = sycam.get_parts_state(
+                part_l, part_r, ref_part_l, ref_part_r, thr_l, thr_r)
             
             prev_parts_state = parts_state
             parts_state = part_l_state and part_r_state
 
-            prev_glass_state = glass_state
+            prev_glstate = glstate
 
             # Defining glass state.
-            if (dt - glass_state_changed_dt).total_seconds() > config.TRANSITION_DURATION:
-                if mode == "MANUAL":
-                    glass_state = utils.get_glass_state()
+            if (dt - glstate_dt).total_seconds() > c.TRANSITION_DURATION:
+                if mode == symode.MANUAL:
+                    glstate = syglstate.get()
                 else:
                     if prev_parts_state != parts_state:
-                        stable_state_dt = dt
+                        parts_state_dt = dt
 
-                    stable_state_td = (dt - stable_state_dt).total_seconds()
-                    if parts_state and prev_glass_state == "OPAQUE" and stable_state_td > config.ON_DELAY:
-                        glass_state = "TRANSPARENT"
-                    elif not parts_state and prev_glass_state == "TRANSPARENT" and stable_state_td > config.OFF_DELAY:
-                        glass_state = "OPAQUE"
+                    parts_state_delta = (dt - parts_state_dt).total_seconds()
+                    if parts_state and prev_glstate == syglstate.OPAQUE and parts_state_delta > c.ON_DELAY:
+                        glstate = syglstate.TRANSPARENT
+                    elif not parts_state and prev_glstate == syglstate.TRANSPARENT and parts_state_delta > c.OFF_DELAY:
+                        glstate = syglstate.OPAQUE
 
-                if prev_glass_state != glass_state:
-                    utils.set_glass_state(glass_state)
-                    glass_state_changed_dt = dt
-                    utils.save_frame(frame, dt, reason=f"GLASS_{glass_state}")
-
-                    with utils.get_log_fpath(dt).open('a') as f:
-                        line = f"{dt_str},{mode},{glass_state}\n"
-                        f.write(line)
+                if prev_glstate != glstate:
+                    syglstate.set(glstate)
+                    glstate_dt = dt
+                    sycam.save_frame(frame, dt, reason=f"GLASS_{glstate}")
 
 #                elif mode = "AUTO":
 #                    if prev_part_l_state != part_l_state:
@@ -177,5 +170,6 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print('\nExit\n')
     except Exception as e:
+        import traceback
         tb = traceback.format_exc()
-        utils.create_error_file(tb)
+        syfiles.output_error(tb)
