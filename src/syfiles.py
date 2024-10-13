@@ -14,11 +14,9 @@ requests_dpath = data_dpath / "requests"
 system_requests_dpath = requests_dpath / "system"
 bot_requests_dpath = requests_dpath / "bot"
 
-error_fpath = root_dpath / "error"
-
-state_on_fpath = state_dpath / "state_on"
-mode_manual_fpath = state_dpath / "mode_manual"
-glstate_transparent_fpath = state_dpath / "glstate_transparent"
+state_on_fpath = state_dpath / "on"
+mode_manual_fpath = state_dpath / "manual"
+glstate_on_fpath = state_dpath / "glon"
 reference_frame_fpath = state_dpath / f"reference_frame.{c.PICTURE_EXT}"
 thresholds_fpath = state_dpath / "thresholds"
 
@@ -32,20 +30,14 @@ set_glstate_on_fpath = system_requests_dpath / "glon"
 set_glstate_off_fpath = system_requests_dpath / "gloff"
 
 save_frame_fpath = system_requests_dpath / "frame"
-update_save_reference_frame_fpath = system_requests_dpath / "ref"
+update_save_reference_frame_fpath = system_requests_dpath / "updateref"
 
 update_thresholds_fpath = system_requests_dpath / "updatethr"
-
-save_reference_frame_fpath = bot_requests_dpath / "ref"
 
 temp_source_fpath = Path("/sys/class/hwmon/hwmon0/temp1_input")
 
 def reconfigure_stdout():
     sys.stdout.reconfigure(line_buffering=True)
-
-def output_error(text):
-    with error_fpath.open('w') as f:
-        f.write(text)
 
 def get_filename(name, dt, ext, pattern="%Y%m%d_%H%M%S"):
     dt_str = sydt.get_str(dt, pattern)
@@ -80,11 +72,10 @@ def create_file(fpath):
 def move_file(fpath_old, fpath_new):
     remove_file(fpath_new)
     fpath_old.rename(fpath_new)
+    wait_until_file(fpath_new, present=True)
 
 def prepare_folders(clean=True):
     if clean:
-        remove_file(error_fpath)
-
         if requests_dpath.is_dir():
             shutil.rmtree(requests_dpath)
 

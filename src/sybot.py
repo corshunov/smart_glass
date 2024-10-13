@@ -7,8 +7,15 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile
 
+import sycam
 import sycfg as c
+import sydt
 import syfiles
+import syglstate
+import symode
+import systate
+import sytemp
+import sythr
 
 syfiles.reconfigure_stdout()
 
@@ -23,326 +30,325 @@ ADMIN_ID = getenv("ADMIN_ID")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot=bot)
 
-bot_cmds = [
-    ("/start", "Start bot."),
-    ("/help", "Show help message."),
+bot_public_cmds = [
+    ("/start", "start bot"),
+    ("/help", "show commands"),
+    ("/state", "show system state"),
+    ("/frame", "show current frame"),
+    ("/ref", "show current reference frame"),
+]
 
-    ("/temperature", "Show CPU temperature at the moment."),
-
-    ("/state", "Show system state: ON, OFF."),
-    ("/on", "Turn on the system."),
-    ("/off", "Turn off the system."),
-
-    ("/mode", "Show mode: MANUAL, AUTO."),
-    ("/manual", "Set mode to MANUAL."),
-    ("/auto", "Set mode to AUTO."),
-
-    ("/glstate", "Show glass state: TRANSPARENT, OPAQUE."),
-    ("/glon", "Set glass state to transparent (relevant only in MANUAL mode)."),
-    ("/gloff", "Set glass state to opaque (relevant only in MANUAL mode)."),
-
-    ("/frame", "Show frame at the moment plus its levels."),
-
-    ("/ref", "Show reference frame currently used."),
-    ("/updateref", "Set reference frame to frame taken at the moment and show it."),
-
-    ("/thr", "Show level thresholds."),
-    ("/updatethr", "Set level thresholds."),
+bot_admin_cmds = [
+    ("/on", "turn ON the system"),
+    ("/off", "turn OFF the system"),
+    ("/manual", "set mode to MANUAL"),
+    ("/auto", "set mode to AUTO"),
+    ("/glon", "turn ON the glass (MANUAL mode only)"),
+    ("/gloff", "turn OFF the glass (MANUAL mode only)"),
+    ("/updateref", "set reference frame to current frame and show it"),
+    ("/updatethr", "set level thresholds"),
 ]
 
 async def is_from_group(msg, notify=False):
-    if msg.chat.id == CHAT_ID:
+    if str(msg.chat.id) == CHAT_ID:
         return True
 
     if notify:
-        await msg.answer("Bot can be used in its dedicated group only.")
+        await msg.reply("Bot can be used in its dedicated group only.")
 
     return False
 
 async def is_from_admin(msg, notify=False):
-    if msg.from_user.id == ADMIN_ID:
+    if str(msg.from_user.id) == ADMIN_ID:
         return True
 
     if notify:
-        await msg.send_message(CHAT_ID, "Command can be used by admin only.")
+        await msg.reply("Command can be used by admin only.")
 
     return False
 
 
-async def system_is_on(notify=False):
-    state = utils.get_state()
-    if state == "ON":
+async def system_is_on(msg, notify=False):
+    state = systate.get()
+    if state == systate.ON:
         return True
 
     if notify:
-        await bot.send_message(CHAT_ID, "System if OFF. Use command /on to turn it on first.")
+        await msg.reply(f"System is {systate.OFF}.\nUse command /on to turn it {systate.ON} first.")
 
     return False
 
-async def mode_is_manual(notify=False):
-    mode = utils.get_mode()
-    if mode == "MANUAL":
+async def mode_is_manual(msg, notify=False):
+    mode = symode.get()
+    if mode == symode.MANUAL:
         return True
 
     if notify:
-        await bot.send_message(CHAT_ID, "Mode is AUTO. Use command /manual to enable manual mode first.")
+        await msg.reply(f"Mode is {symode.AUTO}.\nUse command /manual to enable {symode.MANUAL} mode first.")
 
     return False
 
-async def send_frame(fpath, caption):
-    dt_str = utils.get_nice_dt_str_from_fpath(fpath)
-    caption = f"{caption}\n({dt_str})"
-
+async def send_frame(fpath, caption, rename=True):
     file = FSInputFile(fpath)
     await bot.send_photo(CHAT_ID, file, caption=caption)
 
-    fpath_new = fpath.parent / f"done.{fpath.name}"
-    utils.move_file(fpath, fpath_new)
+    if rename:
+        fname_new = fpath.name.replace('-', '')
+        fpath_new = fpath.parent / fname_new
+        syfiles.move_file(fpath, fpath_new)
+
+async def notify_on_states():
+    await asyncio.sleep(c.BOT_DELAY_ON_START)
+
+    state = systate.get()
+    mode = symode.get()
+
+    while True:
+        await asyncio.sleep(1)
+
+        prev_state = state
+        state = systate.get()
+        if prev_state != state:
+            await bot.send_message(CHAT_ID, f"System is {state} now.")
+
+        prev_mode = mode
+        mode = symode.get()
+        if prev_mode != mode:
+            await bot.send_message(CHAT_ID, f"{mode} mode enabled now.")
 
 async def send_on_frames():
-    await asyncio.sleep(config.BOT_DELAY_ON_START)
+    await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     while True:
-        files = sorted(utils.frames_dpath.glob(f"frame_request*{config.PICTURE_EXT}"))
-        caption = "Current frame requested"
-        for fpath in files:
+        await asyncio.sleep(1)
+
+        files = sorted(syfiles.frames_dpath.glob(f"frame*-.{c.PICTURE_EXT}"))
+        if len(files) > 0:
+            fpath = files[0]
+            fname = fpath.name
+
+            dt_str = sydt.path2str(fpath)
+            
+            if 'save_frame' in fname:
+                caption = f"Frame\n({dt_str})"
+            elif 'update_save_ref_frame' in fname:
+                caption = f"Reference frame updated\n({dt_str})"
+            elif 'set_glass_on' in fname:
+                caption = f"Glass ON\n({dt_str})"
+            elif 'set_glass_off' in fname:
+                caption = f"Glass OFF\n({dt_str})"
+            else:
+                continue
+
             await send_frame(fpath, caption)
-            await asyncio.sleep(3)
-
-
-        files = sorted(utils.frames_dpath.glob(f"frame_reference_update*{config.PICTURE_EXT}"))
-        caption = "Reference frame updated"
-        for fpath in files:
-            await send_frame(fpath, caption)
-            await asyncio.sleep(3)
-
-        files = sorted(utils.frames_dpath.glob(f"frame_glass_transparent*{config.PICTURE_EXT}"))
-        caption = "Glass changed to TRANSPARENT"
-        for fpath in files:
-            await send_frame(fpath, caption)
-            await asyncio.sleep(3)
-
-        files = sorted(utils.frames_dpath.glob(f"frame_glass_opaque*{config.PICTURE_EXT}"))
-        caption = "Glass changed to OPAQUE"
-        for fpath in files:
-            await send_frame(fpath, caption)
-            await asyncio.sleep(3)
-
-        await asyncio.sleep(3)
 
 async def send_on_update_thresholds():
-    await asyncio.sleep(config.BOT_DELAY_ON_START)
+    await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     while True:
-        if utils.update_thresholds_fpath.is_file():
-            utils.remove_file(update_thresholds_fpath)
+        await asyncio.sleep(1)
 
-            thr_l, thr_r = utils.get_thresholds()
+        if syfiles.update_thresholds_fpath.is_file():
+            syfiles.remove_file(syfiles.update_thresholds_fpath)
+
+            thr_l, thr_r = sythr.get()
             await bot.send_message(CHAT_ID, f"Thresholds: {thr_l}, {thr_r}.")
-
-        await asyncio.sleep(3)
         
 @dp.message(Command('start'))
 async def cmd__start(message: Message):
-    if not is_from_group(message, notify=True):
+    if not await is_from_group(message, notify=True):
         return
 
-    await message.answer("Welcome! Use /help to see details about bot.")
+    await message.reply("Welcome!\nUse /help to show available commands.")
 
 @dp.message(Command('help'))
 async def cmd__help(message: Message):
-    if not is_from_group(message, notify=True):
+    if not await is_from_group(message, notify=True):
         return
 
-    bot_cmds_text = "\n".join([f"{cmd}\n{description}\n" for (cmd, description) in bot_cmds])
-    await message.answer(f"I am Smart Glass Bot.\n\nAvailable commands:\n{bot_cmds_text}")
-
-@dp.message(Command('temperature'))
-async def cmd__temperature(message: Message):
-    if not is_from_group(message):
-        return
-
-    t_cpu = utils.get_temperature()
-    await message.answer(f"CPU temperature: {t_cpu:.1f} C.")
+    bot_public_cmds_text = "\n".join([f"{cmd} - {description}" for (cmd, description) in bot_public_cmds])
+    bot_admin_cmds_text = "\n".join([f"{cmd} - {description}" for (cmd, description) in bot_admin_cmds])
+    text = f"I am Smart Glass Bot.\n\nPublic commands:\n{bot_public_cmds_text}\n\nAdmin commands:\n{bot_admin_cmds_text}"
+    await message.reply(text)
 
 @dp.message(Command('state'))
 async def cmd__state(message: Message):
-    if not is_from_group(message):
+    if not await is_from_group(message):
         return
 
-    state = utils.get_state()
-    await message.answer(f"System is {state}.")
+    t_cpu = sytemp.get()
+    state = systate.get()
+    mode = symode.get()
+    glstate = syglstate.get()
+    thr_l, thr_r = sythr.get()
 
-@dp.message(Command('on'))
-async def cmd__on(message: Message):
-    if not is_from_group(message):
-        return
+    text = (f"CPU temp: {t_cpu:.1f} C\n"
+            f"System: {state}\n"
+            f"Mode: {mode}\n"
+            f"Glass: {glstate}\n"
+            f"Thresholds: {thr_l}, {thr_r}")
 
-    if not is_from_admin(message, notify=True):
-        return
-
-    state = utils.get_state()
-    if state == "ON":
-        await message.answer("System is already {state}.")
-        return
-
-    utils.set_state("ON")
-    await message.answer("System is ON now.")
-
-@dp.message(Command('off'))
-async def cmd__off(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not is_from_admin(message, notify=True):
-        return
-
-    state = utils.get_state()
-    if state == "OFF":
-        await message.answer("System is already {state}.")
-        return
-
-    utils.set_state("OFF")
-    await message.answer("System is OFF now.")
-
-@dp.message(Command('mode'))
-async def cmd__mode(message: Message):
-    if not is_from_group(message):
-        return
-
-    mode = utils.get_mode()
-    await message.answer(f"Mode is {mode}.")
-
-@dp.message(Command('manual'))
-async def cmd__manual(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not is_from_admin(message, notify=True):
-        return
-
-    mode = utils.get_mode()
-    if mode == "MANUAL":
-        await message.answer("Mode is already {mode}.")
-        return
-
-    utils.set_mode("MANUAL")
-    await message.answer("MANUAL mode enabled.")
-
-@dp.message(Command('auto'))
-async def cmd__auto(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not is_from_admin(message, notify=True):
-        return
-
-    mode = utils.get_mode()
-    if mode == "AUTO":
-        await message.answer("Mode is already {mode}.")
-        return
-
-    utils.set_mode("AUTO")
-    await message.answer("AUTO mode enabled.")
-
-@dp.message(Command('glstate'))
-async def cmd__glstate(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not system_is_on(notify=True):
-        return
-
-    glstate = utils.get_glass_state()
-    await message.answer(f"Glass state is {glstate}.")
-
-@dp.message(Command('glon'))
-async def cmd__glon(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not system_is_on(notify=True):
-        return
-
-    if not mode_is_manual(notify=True):
-        return
-
-    glstate = utils.get_glass_state()
-    if glstate == "TRANSPARENT":
-        await message.answer(f"Glass state is already {glstate}.")
-        return
-
-    utils.set_glass_state("TRANSPARENT")
-
-@dp.message(Command('gloff'))
-async def cmd__gloff(message: Message):
-    if not is_from_group(message):
-        return
-
-    if not system_is_on(notify=True):
-        return
-
-    if not mode_is_manual(notify=True):
-        return
-
-    glstate = utils.get_glass_state()
-    if glstate == "OPAQUE":
-        await message.answer(f"Glass state is already {glstate}.")
-        return
-
-    utils.set_glass_state("OPAQUE")
+    await message.reply(text)
 
 @dp.message(Command('frame'))
 async def cmd__frame(message: Message):
-    if not is_from_group(message):
+    if not await is_from_group(message):
         return
 
-    if not system_is_on(notify=True):
+    if not await system_is_on(message, notify=True):
         return
 
-    utils.request_frame()
+    sycam.save_frame_request()
+    await message.reply(f"Frame requested.")
 
 @dp.message(Command('ref'))
 async def cmd__frame(message: Message):
-    if not is_from_group(message):
+    if not await is_from_group(message):
         return
 
-    files = sorted(utils.reference_frames_dpath.glob(f"frame_reference*{config.PICTURE_EXT}"))
-    if len(files) == 0:
-        await message.answer("No reference frames found")
+    if not syfiles.reference_frame_fpath.is_file():
+        await message.answer("No reference frames found.")
         return
 
-    fpath = files[-1]
-    caption = "Reference frame requested"
-    await send_frame(fpath, caption)
+    dt_str = sydt.get_str(pattern='nice')
+    caption = f"Reference frame\n({dt_str})"
+    await send_frame(syfiles.reference_frame_fpath, caption, rename=False)
+
+@dp.message(Command('on'))
+async def cmd__on(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    state = systate.get()
+    if state == systate.ON:
+        await message.reply(f"System is already {state}.")
+        return
+
+    systate.set_request(systate.ON)
+    await message.reply(f"Turning system {systate.ON} requested.")
+
+@dp.message(Command('off'))
+async def cmd__off(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    state = systate.get()
+    if state == systate.OFF:
+        await message.reply(f"System is already {state}.")
+        return
+
+    systate.set_request(systate.OFF)
+    await message.reply(f"Turning system {systate.OFF} requested.")
+
+@dp.message(Command('manual'))
+async def cmd__manual(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    mode = symode.get()
+    if mode == symode.MANUAL:
+        await message.reply(f"Mode is already {mode}.")
+        return
+
+    symode.set_request(symode.MANUAL)
+    await message.reply(f"{symode.MANUAL} mode requested.")
+
+@dp.message(Command('auto'))
+async def cmd__auto(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    mode = symode.get()
+    if mode == symode.AUTO:
+        await message.reply(f"Mode is already {mode}.")
+        return
+
+    symode.set_request(symode.AUTO)
+    await message.reply(f"{symode.AUTO} mode requested.")
+
+@dp.message(Command('glon'))
+async def cmd__glon(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    if not await system_is_on(message, notify=True):
+        return
+
+    if not await mode_is_manual(message, notify=True):
+        return
+
+    glstate = syglstate.get()
+    if glstate == syglstate.ON:
+        await message.reply(f"Glass is already {glstate}.")
+        return
+
+    syglstate.set_request(syglstate.ON)
+    await message.reply(f"Turning glass {syglstate.ON} requested.")
+
+@dp.message(Command('gloff'))
+async def cmd__gloff(message: Message):
+    if not await is_from_group(message):
+        return
+
+    if not await is_from_admin(message, notify=True):
+        return
+
+    if not await system_is_on(message, notify=True):
+        return
+
+    if not await mode_is_manual(message, notify=True):
+        return
+
+    glstate = syglstate.get()
+    if glstate == syglstate.OFF:
+        await message.reply(f"Glass is already {glstate}.")
+        return
+
+    syglstate.set_request(syglstate.OFF)
+    await message.reply(f"Turning glass {syglstate.OFF} requested.")
 
 @dp.message(Command('updateref'))
 async def cmd__frame(message: Message):
-    if not is_from_group(message):
+    if not await is_from_group(message):
         return
 
-    if not system_is_on(notify=True):
+    if not await is_from_admin(message, notify=True):
         return
 
-    utils.request_update_reference_frame()
-
-@dp.message(Command('thr'))
-async def cmd__frame(message: Message):
-    if not is_from_group(message):
+    if not await system_is_on(message, notify=True):
         return
 
-    thr_l, thr_r = utils.get_thresholds()
-    await message.answer(f"Thresholds: {thr_l}, {thr_r}.")
+    sycam.update_save_reference_frame_request()
+    await message.reply(f"Update reference frame requested.")
 
 @dp.message(Command('updatethr'))
 async def cmd__frame(message: Message):
-    if not is_from_group(message):
+    if not await is_from_group(message):
         return
 
-    if not system_is_on(notify=True):
+    if not await is_from_admin(message, notify=True):
+        return
+
+    if not await system_is_on(message, notify=True):
         return
 
     utils.request_update_thresholds()
+    await message.reply(f"Update thresholds requested.")
 
 #@dp.message()
 #async def cmd__any(message: Message):
@@ -351,6 +357,7 @@ async def cmd__frame(message: Message):
 async def main():
     await bot.send_message(CHAT_ID, "Smart Glass Bot started.")
 
+    asyncio.create_task(notify_on_states())
     asyncio.create_task(send_on_frames())
     asyncio.create_task(send_on_update_thresholds())
 
@@ -358,5 +365,5 @@ async def main():
     
 
 if __name__ == '__main__':
-    utils.prepare_folders(clean=False)
+    syfiles.prepare_folders(clean=False)
     asyncio.run(main())

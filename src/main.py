@@ -85,11 +85,6 @@ def main():
             else:
                 state = systate.get()
 
-            if state == systate.OFF:
-                print(f"[{dt_str}]    System is OFF")
-                sydt.sleep(1)
-                continue
-
             # Mode.
             prev_mode = mode
 
@@ -100,6 +95,25 @@ def main():
             else:
                 mode = symode.get()
 
+            # Thresholds request.
+            flag, (thr_l_new, thr_r_new) = sythr.update_thresholds_present()
+            if flag:
+                sythr.save(thr_l_new, thr_r_new)
+                thr_l, thr_r = thr_l_new, thr_r_new
+
+            # Continue or idle.
+            if state == systate.OFF:
+                if glstate == syglstate.ON:
+                    glstate = syglstate.OFF 
+                    syglstate.set(glstate)
+                    glstate_dt = dt
+                    sycam.save_frame(frame, dt, reason=f"set_glass_{glstate.lower()}")
+
+                print(f"{dt_str} - {state} - {mode} - L --- ({thr_l}) - R --- ({thr_r}) - {glstate}")
+
+                sydt.sleep(1)
+                continue
+
             # Frame.
             flag, frame = vc.read()
             if not flag:
@@ -107,19 +121,13 @@ def main():
 
             # Frame requests.
             if sycam.save_frame_present():
-                sycam.save_frame(frame, dt, reason='REQUEST')
+                sycam.save_frame(frame, dt, reason='save_frame')
 
             if sycam.update_save_reference_frame_present():
                 reference_frame = frame
                 ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
-                sycam.save_frame(reference_frame, dt, reason='REFERENCE_UPDATE')
+                sycam.save_frame(reference_frame, dt, reason='update_save_ref_frame')
                 sycam.backup_reference_frame(reference_frame)
-
-            # Thresholds request.
-            flag, (thr_l_new, thr_r_new) = sythr.update_thresholds_present()
-            if flag:
-                sythr.save(thr_l_new, thr_r_new)
-                thr_l, thr_r = thr_l_new, thr_r_new
 
             # Parts.
             prev_part_l_state = part_l_state
@@ -163,7 +171,7 @@ def main():
                 if prev_glstate != glstate:
                     syglstate.set(glstate)
                     glstate_dt = dt
-                    sycam.save_frame(frame, dt, reason=f"GLASS_{glstate}")
+                    sycam.save_frame(frame, dt, reason=f"set_glass_{glstate.lower()}")
 
             # Print.
             print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) - R {level_r:3} ({thr_r}) - {glstate}")
@@ -217,5 +225,5 @@ if __name__ == '__main__':
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        syfiles.output_error(tb)
         log("error")
+        print(tb)

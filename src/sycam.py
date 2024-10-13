@@ -48,18 +48,18 @@ def log_frame(reason, dt=None):
         f.write(f"{dt_str},frame,{reason}\n")
 
 def save_frame(frame, dt, reason):
-    if reason == "REQUEST":
-        name = "frame_request"
-    elif reason == "REFERENCE_UPDATE":
-        name = "frame_reference_update"
-    elif reason == "GLASS_TRANSPARENT":
-        name = "frame_glass_transparent"
-    elif reason == "GLASS_OPAQUE":
-        name = "frame_glass_opaque"
+    if reason == "save_frame":
+        ext = f"save_frame-.{c.PICTURE_EXT}"
+    elif reason == "update_save_ref_frame":
+        ext = f"update_save_ref_frame-.{c.PICTURE_EXT}"
+    elif reason == "set_glass_on":
+        ext = f"set_glass_on-.{c.PICTURE_EXT}"
+    elif reason == "set_glass_off":
+        ext = f"set_glass_off-.{c.PICTURE_EXT}"
     else:
         raise Exception("Invalid 'reason' argument.")
 
-    fpath = syfiles.frames_dpath / syfiles.get_filename(name, dt, c.PICTURE_EXT)
+    fpath = syfiles.frames_dpath / syfiles.get_filename("frame", dt, ext)
     cv2.imwrite(fpath, frame)
     syfiles.wait_until_file(fpath, present=True)
     log_frame(reason, dt)
