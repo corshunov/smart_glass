@@ -150,6 +150,8 @@ async def send_on_frames():
                 caption = f"Glass ON"
             elif reason == 'set_glass_off':
                 caption = f"Glass OFF"
+            elif reason == 'single':
+                caption = f"One person present"
             else:
                 continue
 

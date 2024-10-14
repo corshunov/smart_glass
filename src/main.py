@@ -181,42 +181,57 @@ def main():
                     glstate_dt = dt
                     sycam.save_frame(frame, metadata+[f"set_glass_{glstate.lower()}"])
 
+
+                elif mode == symode.AUTO:
+                    if prev_part_l_state != part_l_state:
+                        part_l_state_dt = dt
+                    part_l_state_delta = (dt - part_l_state_dt).total_seconds()
+
+                    if prev_part_r_state != part_r_state:
+                        part_r_state_dt = dt
+                    part_r_state_delta = (dt - part_r_state_dt).total_seconds()
+
+                    if part_l_state and part_l_i in [0,2] and part_l_state_delta > c.ON_DELAY:
+                        part_l_i = 1
+                        part_l_frame = frame
+                        metadata_l = [
+                            dt,
+                            level_l,
+                            level_r,
+                            thr_l,
+                            thr_r,
+                        ]
+                    elif not part_l_state and part_l_i == 1 and part_l_state_delta > c.OFF_DELAY:
+                        part_l_i = 2
+                    elif part_l_i == 2:
+                        part_l_i = 0
+
+                    if part_r_state and part_r_i in [0,2] and part_r_state_delta > c.ON_DELAY:
+                        part_r_i = 1
+                        part_r_frame = frame
+                        metadata_r = [
+                            dt,
+                            level_l,
+                            level_r,
+                            thr_l,
+                            thr_r,
+                        ]
+                    elif not part_r_state and part_r_i == 1 and part_r_state_delta > c.OFF_DELAY:
+                        part_r_i = 2
+                    elif part_r_i == 2:
+                        part_r_i = 0
+
+                    if part_l_i == 2 and part_r_i == 0:
+                        sycam.save_frame(part_l_frame, metadata_l+['single'])
+                        part_l_i = 0
+                        part_r_i = 0
+                    elif part_r_i == 2 and part_l_i == 0:
+                        sycam.save_frame(part_r_frame, metadata_r+['single'])
+                        part_l_i = 0
+                        part_r_i = 0
+
             # Print.
             print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) - R {level_r:3} ({thr_r}) - {glstate}")
-
-#                elif mode = "AUTO":
-#                    if prev_part_l_state != part_l_state:
-#                        stable_state_l_dt = dt
-#                    stable_state_l_td = (dt - stable_state_dt_l).total_seconds()
-#
-#                    if prev_part_r_state != part_r_state:
-#                        stable_state_r_dt = dt
-#                    stable_state_r_td = (dt - stable_state_dt_r).total_seconds()
-#
-#                    if part_l_state and part_l_i in [0,2] and stable_state_l_td > config.ON_DELAY:
-#                        part_l_i = 1
-#                        part_l_frame = frame
-#                    elif not part_l_state and part_l_i == 1 and stable_state_l_td > config.OFF_DELAY:
-#                        part_l_i = 2
-#                    elif part_l_i == 2:
-#                        part_l_i = 0
-#
-#                    if part_r_state and part_r_i in [0,2] and stable_state_r_td > config.ON_DELAY:
-#                        part_r_i = 1
-#                        part_r_frame = frame
-#                    elif not part_r_state and part_r_i == 1 and stable_state_r_td > config.OFF_DELAY:
-#                        part_r_i = 2
-#                    elif part_r_i == 2:
-#                        part_r_i = 0
-#
-#                    if part_l_i == 2 and part_r_i == 0:
-#                        save_frame(part_l_frame, dt, reason='single_l')
-#                        part_l_i = 0
-#                        part_r_i = 0
-#                    elif part_r_i == 2 and part_l_i == 0:
-#                        save_frame(part_r_frame, dt, reason='single_r')
-#                        part_l_i = 0
-#                        part_r_i = 0
 
     except Exception as e:
         vc.release()
