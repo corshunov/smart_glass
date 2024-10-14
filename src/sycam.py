@@ -38,31 +38,23 @@ def get_reference_frame(vc):
 
     raise Exception("No valid reference frame found.")
 
-def log_frame(reason, dt=None):
+def log_frame(metadata):
+    dt, level_l, level_r, thr_l, thr_r, reason = metadata
     if dt is None:
         dt = sydt.now()
     dt_str = sydt.get_str(dt)
 
+    text = f"{level_l};{level_r}  {thr_l};{thr_r}  {reason}"
+
     fpath = syfiles.get_log_path(dt)
     with fpath.open('a') as f:
-        f.write(f"{dt_str},frame,{reason}\n")
+        f.write(f"{dt_str},frame,{text}\n")
 
-def save_frame(frame, dt, reason):
-    if reason == "save_frame":
-        ext = f"save_frame-.{c.PICTURE_EXT}"
-    elif reason == "update_save_ref_frame":
-        ext = f"update_save_ref_frame-.{c.PICTURE_EXT}"
-    elif reason == "set_glass_on":
-        ext = f"set_glass_on-.{c.PICTURE_EXT}"
-    elif reason == "set_glass_off":
-        ext = f"set_glass_off-.{c.PICTURE_EXT}"
-    else:
-        raise Exception("Invalid 'reason' argument.")
-
-    fpath = syfiles.frames_dpath / syfiles.get_filename("frame", dt, ext)
+def save_frame(frame, metadata):
+    fpath = syfiles.get_frame_path(metadata)
     cv2.imwrite(fpath, frame)
     syfiles.wait_until_file(fpath, present=True)
-    log_frame(reason, dt)
+    log_frame(metadata)
 
 def backup_reference_frame(frame):
     cv2.imwrite(syfiles.reference_frame_fpath, frame)

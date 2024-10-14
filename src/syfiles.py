@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import shutil
 import sys
@@ -39,13 +40,6 @@ temp_source_fpath = Path("/sys/class/hwmon/hwmon0/temp1_input")
 def reconfigure_stdout():
     sys.stdout.reconfigure(line_buffering=True)
 
-def get_filename(name, dt, ext, pattern="%Y%m%d_%H%M%S"):
-    dt_str = sydt.get_str(dt, pattern)
-    return f"{name}__{dt_str}.{ext}"
-
-def get_log_path(dt):
-    return logs_dpath / get_filename("log", dt, "csv", "%Y%m%d")
-
 def wait_until_file(fpath, present):
     if present:
         while True:
@@ -86,3 +80,36 @@ def prepare_folders(clean=True):
     requests_dpath.mkdir(exist_ok=True)
     system_requests_dpath.mkdir(exist_ok=True)
     bot_requests_dpath.mkdir(exist_ok=True)
+
+def get_frame_path(metadata):
+    dt, level_l, level_r, thr_l, thr_r, reason = metadata
+    dt_str = sydt.get_str(dt, "%Y%m%d_%H%M%S")
+    name = f"frame__{dt_str}__{level_l}_{level_r}__{thr_l}_{thr_r}__{reason}-.{c.PICTURE_EXT}"
+    return frames_dpath / name
+
+def get_log_path(dt):
+    dt_str = sydt.get_str(dt, pattern="%Y%m%d")
+    name = f"log__{dt_str}.csv"
+    return logs_dpath / name
+
+def path2metadata(fpath):
+    name = fpath.name
+    l = name.split('__')
+
+    dt_str = l[1]
+    dt = datetime.strptime(dt_str, "%Y%m%d_%H%M%S")
+
+    levels = l[2]
+    levels_l = levels.split('_')
+    level_l = int(levels_l[0])
+    level_r = int(levels_l[1])
+
+    thresholds = l[3]
+    thresholds_l = thresholds.split('_')
+    thr_l = int(thresholds_l[0])
+    thr_r = int(thresholds_l[1])
+
+    last_part = l[4]
+    reason = last_part.split('-')[0]
+
+    return dt, level_l, level_r, thr_l, thr_r, reason

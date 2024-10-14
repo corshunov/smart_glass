@@ -95,7 +95,7 @@ def main():
             else:
                 mode = symode.get()
 
-            # Thresholds request.
+            # Update thresholds request.
             flag, (thr_l_new, thr_r_new) = sythr.update_thresholds_present()
             if flag:
                 sythr.save(thr_l_new, thr_r_new)
@@ -107,7 +107,7 @@ def main():
                     glstate = syglstate.OFF 
                     syglstate.set(glstate)
                     glstate_dt = dt
-                    sycam.save_frame(frame, dt, reason=f"set_glass_{glstate.lower()}")
+                    sycam.save_frame(frame, metadata+[f"set_glass_{glstate.lower()}"])
 
                 print(f"{dt_str} - {state} - {mode} - L --- ({thr_l}) - R --- ({thr_r}) - {glstate}")
 
@@ -118,16 +118,6 @@ def main():
             flag, frame = vc.read()
             if not flag:
                 raise Exception("Failed to read frame.")
-
-            # Frame requests.
-            if sycam.save_frame_present():
-                sycam.save_frame(frame, dt, reason='save_frame')
-
-            if sycam.update_save_reference_frame_present():
-                reference_frame = frame
-                ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
-                sycam.save_frame(reference_frame, dt, reason='update_save_ref_frame')
-                sycam.backup_reference_frame(reference_frame)
 
             # Parts.
             prev_part_l_state = part_l_state
@@ -144,6 +134,27 @@ def main():
             prev_parts_state = parts_state
             parts_state = part_l_state and part_r_state
 
+            # Frame metadata.
+            metadata = [
+                dt,
+                level_l,
+                level_r,
+                thr_l,
+                thr_r,
+            ]
+
+            # Save frame request.
+            if sycam.save_frame_present():
+                sycam.save_frame(frame, metadata+['save_frame'])
+
+            # Update and save reference frame request.
+            if sycam.update_save_reference_frame_present():
+                reference_frame = frame
+                ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
+                sycam.save_frame(reference_frame, metadata+['update_save_ref_frame'])
+                sycam.backup_reference_frame(reference_frame)
+
+
             # Glass state.
             prev_glstate = glstate
 
@@ -151,10 +162,7 @@ def main():
                 if mode == symode.MANUAL:
                     flag, glstate_new = syglstate.set_present()
                     if flag:
-                        syglstate.set(glstate_new)
                         glstate = glstate_new
-                    else:
-                        glstate = syglstate.get()
                 else:
                     # Invoked just to remove 'set_glstate' files which are not relevant in AUTO mode.
                     syglstate.set_present() 
@@ -171,7 +179,7 @@ def main():
                 if prev_glstate != glstate:
                     syglstate.set(glstate)
                     glstate_dt = dt
-                    sycam.save_frame(frame, dt, reason=f"set_glass_{glstate.lower()}")
+                    sycam.save_frame(frame, metadata+[f"set_glass_{glstate.lower()}"])
 
             # Print.
             print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) - R {level_r:3} ({thr_r}) - {glstate}")

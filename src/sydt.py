@@ -20,9 +20,3 @@ def get_str(dt=None, pattern='%Y%m%dT%H%M%S.%f'):
         pattern = "%d.%m.%Y at %H:%M:%S"
 
     return dt.strftime(pattern)
-
-def path2str(fpath):
-    dt_str = fpath.with_suffix('').with_suffix('').name.split('__')[-1]
-    dt = datetime.strptime(dt_str, "%Y%m%d_%H%M%S")
-    dt_str = get_str(dt, pattern='nice')
-    return dt_str

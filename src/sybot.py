@@ -125,21 +125,21 @@ async def send_on_frames():
         files = sorted(syfiles.frames_dpath.glob(f"frame*-.{c.PICTURE_EXT}"))
         if len(files) > 0:
             fpath = files[0]
-            fname = fpath.name
-
-            dt_str = sydt.path2str(fpath)
+            dt, level_l, level_r, thr_l, thr_r, reason = syfiles.path2metadata(fpath)
+            dt_str = sydt.get_str(dt, pattern='nice')
             
-            if 'save_frame' in fname:
-                caption = f"Frame\n({dt_str})"
-            elif 'update_save_ref_frame' in fname:
-                caption = f"Reference frame updated\n({dt_str})"
-            elif 'set_glass_on' in fname:
-                caption = f"Glass ON\n({dt_str})"
-            elif 'set_glass_off' in fname:
-                caption = f"Glass OFF\n({dt_str})"
+            if reason == 'save_frame':
+                caption = f"Frame"
+            elif reason == 'update_save_ref_frame':
+                caption = f"Reference frame updated"
+            elif reason == 'set_glass_on':
+                caption = f"Glass ON"
+            elif reason == 'set_glass_off':
+                caption = f"Glass OFF"
             else:
                 continue
 
+            caption = f"{caption}\nThresholds: {level_l} ({thr_l}), {level_r} ({thr_r})\nTimestamp: {dt_str}"
             await send_frame(fpath, caption)
 
 async def send_on_update_thresholds():
