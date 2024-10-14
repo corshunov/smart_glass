@@ -57,4 +57,3 @@ def update_thresholds_request(thr_l, thr_r):
     with syfiles.update_thresholds_fpath.open('w') as f:
         f.write(f"{thr_l},{thr_r}")
     syfiles.wait_until_file(syfiles.update_thresholds_fpath, present=True)
-

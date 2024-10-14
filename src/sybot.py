@@ -97,11 +97,19 @@ async def send_frame(fpath, caption, rename=True):
         fpath_new = fpath.parent / fname_new
         syfiles.move_file(fpath, fpath_new)
 
-async def notify_on_states():
+async def send_ping():
+    await asyncio.sleep(c.BOT_DELAY_ON_START)
+
+    while True:
+        await bot.send_message(ADMIN_ID, f"Ping")
+        await asyncio.sleep(60)
+
+async def send_on_states():
     await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     state = systate.get()
     mode = symode.get()
+    thr_l, thr_r = sythr.get()
 
     while True:
         await asyncio.sleep(1)
@@ -115,6 +123,12 @@ async def notify_on_states():
         mode = symode.get()
         if prev_mode != mode:
             await bot.send_message(CHAT_ID, f"{mode} mode enabled now.")
+
+        prev_thr_l = thr_l
+        prev_thr_r = thr_r
+        thr_l, thr_r = sythr.get()
+        if (prev_thr_l != thr_l) or (prev_thr_r != thr_r):
+            await bot.send_message(CHAT_ID, f"Thresholds are {thr_l} and {thr_r} now.")
 
 async def send_on_frames():
     await asyncio.sleep(c.BOT_DELAY_ON_START)
@@ -142,18 +156,6 @@ async def send_on_frames():
             caption = f"{caption}\nThresholds: {level_l} ({thr_l}), {level_r} ({thr_r})\nTimestamp: {dt_str}"
             await send_frame(fpath, caption)
 
-async def send_on_update_thresholds():
-    await asyncio.sleep(c.BOT_DELAY_ON_START)
-
-    while True:
-        await asyncio.sleep(1)
-
-        if syfiles.update_thresholds_fpath.is_file():
-            syfiles.remove_file(syfiles.update_thresholds_fpath)
-
-            thr_l, thr_r = sythr.get()
-            await bot.send_message(CHAT_ID, f"Thresholds: {thr_l}, {thr_r}.")
-        
 @dp.message(Command('start'))
 async def cmd__start(message: Message):
     if not await is_from_group(message, notify=True):
@@ -202,7 +204,7 @@ async def cmd__frame(message: Message):
     await message.reply(f"Frame requested.")
 
 @dp.message(Command('ref'))
-async def cmd__frame(message: Message):
+async def cmd__ref(message: Message):
     if not await is_from_group(message):
         return
 
@@ -211,7 +213,7 @@ async def cmd__frame(message: Message):
         return
 
     dt_str = sydt.get_str(pattern='nice')
-    caption = f"Reference frame\n({dt_str})"
+    caption = f"Reference frame\nTimestamp: {dt_str}"
     await send_frame(syfiles.reference_frame_fpath, caption, rename=False)
 
 @dp.message(Command('on'))
@@ -323,7 +325,7 @@ async def cmd__gloff(message: Message):
     await message.reply(f"Turning glass {syglstate.OFF} requested.")
 
 @dp.message(Command('updateref'))
-async def cmd__frame(message: Message):
+async def cmd__updateref(message: Message):
     if not await is_from_group(message):
         return
 
@@ -337,7 +339,7 @@ async def cmd__frame(message: Message):
     await message.reply(f"Update reference frame requested.")
 
 @dp.message(Command('updatethr'))
-async def cmd__frame(message: Message):
+async def cmd__updatethr(message: Message):
     if not await is_from_group(message):
         return
 
@@ -346,8 +348,20 @@ async def cmd__frame(message: Message):
 
     if not await system_is_on(message, notify=True):
         return
+    
+    try:
+        text = message.text
+        l = text.split()
+        if len(l) != 2 or l[0] != '/updatethr':
+            raise Exception
+        l = l[1].split(',')
+        thr_l = int(l[0])
+        thr_r = int(l[1])
+    except:
+        await message.reply(f"Invalid command.")
+        return
 
-    utils.request_update_thresholds()
+    sythr.update_thresholds_request(thr_l, thr_r)
     await message.reply(f"Update thresholds requested.")
 
 #@dp.message()
@@ -357,9 +371,9 @@ async def cmd__frame(message: Message):
 async def main():
     await bot.send_message(CHAT_ID, "Smart Glass Bot started.")
 
-    asyncio.create_task(notify_on_states())
+    asyncio.create_task(send_ping())
+    asyncio.create_task(send_on_states())
     asyncio.create_task(send_on_frames())
-    asyncio.create_task(send_on_update_thresholds())
 
     await dp.start_polling(bot)
     
