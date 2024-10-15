@@ -15,10 +15,12 @@ requests_dpath = data_dpath / "requests"
 system_requests_dpath = requests_dpath / "system"
 bot_requests_dpath = requests_dpath / "bot"
 
+light_on_fpath = state_dpath / "light_on"
 state_on_fpath = state_dpath / "on"
 mode_manual_fpath = state_dpath / "manual"
 glstate_on_fpath = state_dpath / "glon"
 reference_frame_fpath = state_dpath / f"reference_frame.{c.PICTURE_EXT}"
+black_frame_fpath = state_dpath / f"black_frame.{c.PICTURE_EXT}"
 thresholds_fpath = state_dpath / "thresholds"
 
 set_state_on_fpath = system_requests_dpath / "on"

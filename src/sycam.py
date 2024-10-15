@@ -24,7 +24,7 @@ def get_resolution(vc):
     h = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
     return (w, h)
 
-def get_default_reference_frame(vc):
+def get_black_frame(vc):
     w, h = get_resolution(vc)
     return np.zeros((h, w, 3), dtype=np.uint8)
 
@@ -56,7 +56,18 @@ def save_frame(frame, metadata):
     syfiles.wait_until_file(fpath, present=True)
     log_frame(metadata)
 
-def backup_reference_frame(frame):
+def save_state_frame(frame, kind):
+    if kind == "reference":
+        fpath = syfiles.reference_frame_fpath
+    elif kind == "black":
+        fpath = syfiles.black_frame_fpath
+    else:
+        raise Exception("Invalid 'kind' argument")
+
+    cv2.imwrite(fpath, frame)
+    syfiles.wait_until_file(fpath, present=True)
+
+def save_black_frame(frame):
     cv2.imwrite(syfiles.reference_frame_fpath, frame)
     syfiles.wait_until_file(syfiles.reference_frame_fpath, present=True)
 
@@ -99,10 +110,18 @@ def get_parts(frame):
 
     return part_l, part_r
 
-def get_part_level(frame, reference_frame):
+def get_level(frame, reference_frame):
     diff = cv2.absdiff(frame, reference_frame)
     level = int(diff.mean())
     return level
+
+def is_light_on(frame):
+    black_frame = cv2.imread(syfiles.black_frame_fpath)
+    level = get_level(frame, black_frame)
+    if level > 40:
+        return True
+
+    return False
 
 def save_frame_present():
     return syfiles.remove_file(syfiles.save_frame_fpath)

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import cv2
 
 import sycam
@@ -5,6 +7,7 @@ import sycfg as c
 import sydt
 import syfiles
 import syglstate
+import sylight
 import symode
 import systate
 import sytemp
@@ -23,18 +26,19 @@ def log(state, dt=None):
 
 def main():
     dt = sydt.now()
-
     log("start", dt)
-
-    syfiles.prepare_folders()
-
-    temp = sytemp.get()
-    sytemp.log(temp, dt)
-    temp_dt = dt
 
     vc = sycam.get()
 
     try:
+        syfiles.prepare_folders()
+
+        temp_delta = timedelta(minutes=5)
+        next_temp_dt = dt - temp_delta # to update it on the 1st iteration
+
+        light_delta = timedelta(seconds=10)
+        next_light_dt = dt - light_delta # to update it on the 1st iteration
+
         state = systate.ON
         systate.set(state)
 
@@ -44,10 +48,13 @@ def main():
         syglstate.set(glstate)
         glstate_dt = dt
 
+        black_frame = sycam.get_black_frame(vc)
+        sycam.save_state_frame(black_frame, kind="black")
+
         try:
             reference_frame = sycam.get_reference_frame(vc)
         except:
-            reference_frame = sycam.get_default_reference_frame(vc)
+            reference_frame = black_frame
 
         ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
 
@@ -70,10 +77,10 @@ def main():
             dt_str = sydt.get_str(dt)
 
             # Temperature.
-            if (dt - temp_dt).total_seconds() >= 300:
+            if dt > next_temp_dt:
                 temp = sytemp.get()
                 sytemp.log(temp, dt)
-                temp_dt = dt
+                next_temp_dt = dt + temp_delta
 
             # State.
             prev_state = state
@@ -119,14 +126,24 @@ def main():
             if not flag:
                 raise Exception("Failed to read frame.")
 
+            # Light.
+            if dt > next_light_dt:
+                if sycam.is_light_on(frame):
+                    light_state = sylight.ON
+                else:
+                    light_state = sylight.OFF
+
+                sylight.set(light_state)
+                next_light_dt = dt + light_delta
+
             # Parts.
             prev_part_l_state = part_l_state
             prev_part_r_state = part_r_state
 
             part_l, part_r = sycam.get_parts(frame)
 
-            level_l = sycam.get_part_level(part_l, ref_part_l)
-            level_r = sycam.get_part_level(part_r, ref_part_r)
+            level_l = sycam.get_level(part_l, ref_part_l)
+            level_r = sycam.get_level(part_r, ref_part_r)
             
             part_l_state = level_l > thr_l
             part_r_state = level_r > thr_r
@@ -152,8 +169,7 @@ def main():
                 reference_frame = frame
                 ref_part_l, ref_part_r = sycam.get_parts(reference_frame)
                 sycam.save_frame(reference_frame, metadata+['update_save_ref_frame'])
-                sycam.backup_reference_frame(reference_frame)
-
+                sycam.save_state_frame(reference_frame, kind="reference")
 
             # Glass state.
             prev_glstate = glstate
@@ -176,62 +192,68 @@ def main():
                     elif not parts_state and prev_glstate == syglstate.ON and parts_state_delta > c.OFF_DELAY:
                         glstate = syglstate.OFF
 
+                    if light_state == sylight.OFF:
+                        glstate = syglstate.OFF
+
                 if prev_glstate != glstate:
                     syglstate.set(glstate)
                     glstate_dt = dt
                     sycam.save_frame(frame, metadata+[f"set_glass_{glstate.lower()}"])
 
+                    if glstate == syglstate.OFF:
+                        part_l_i = 3
+                        part_r_i = 3
 
-                elif mode == symode.AUTO:
-                    if prev_part_l_state != part_l_state:
-                        part_l_state_dt = dt
-                    part_l_state_delta = (dt - part_l_state_dt).total_seconds()
+            # Parts state.
+            if prev_part_l_state != part_l_state:
+                part_l_state_dt = dt
+            part_l_state_delta = (dt - part_l_state_dt).total_seconds()
 
-                    if prev_part_r_state != part_r_state:
-                        part_r_state_dt = dt
-                    part_r_state_delta = (dt - part_r_state_dt).total_seconds()
+            if prev_part_r_state != part_r_state:
+                part_r_state_dt = dt
+            part_r_state_delta = (dt - part_r_state_dt).total_seconds()
 
-                    if part_l_state and part_l_i in [0,2] and part_l_state_delta > c.ON_DELAY:
-                        part_l_i = 1
-                        part_l_frame = frame
-                        metadata_l = [
-                            dt,
-                            level_l,
-                            level_r,
-                            thr_l,
-                            thr_r,
-                        ]
-                    elif not part_l_state and part_l_i == 1 and part_l_state_delta > c.OFF_DELAY:
-                        part_l_i = 2
-                    elif part_l_i == 2:
-                        part_l_i = 0
+            if part_l_state and part_l_i == 0 and part_l_state_delta > c.ON_DELAY:
+                part_l_i = 1
+                part_l_frame = frame
+                metadata_l = [
+                    dt,
+                    level_l,
+                    level_r,
+                    thr_l,
+                    thr_r,
+                ]
+            elif not part_l_state and part_l_i == 1 and part_l_state_delta > c.OFF_DELAY:
+                part_l_i = 2
+            elif part_l_i == 2:
+                part_l_i = 0
+            elif part_l_i == 3 and not part_l_state and not part_r_state:
+                part_l_i = 0
 
-                    if part_r_state and part_r_i in [0,2] and part_r_state_delta > c.ON_DELAY:
-                        part_r_i = 1
-                        part_r_frame = frame
-                        metadata_r = [
-                            dt,
-                            level_l,
-                            level_r,
-                            thr_l,
-                            thr_r,
-                        ]
-                    elif not part_r_state and part_r_i == 1 and part_r_state_delta > c.OFF_DELAY:
-                        part_r_i = 2
-                    elif part_r_i == 2:
-                        part_r_i = 0
+            if part_r_state and part_r_i == 0 and part_r_state_delta > c.ON_DELAY:
+                part_r_i = 1
+                part_r_frame = frame
+                metadata_r = [
+                    dt,
+                    level_l,
+                    level_r,
+                    thr_l,
+                    thr_r,
+                ]
+            elif not part_r_state and part_r_i == 1 and part_r_state_delta > c.OFF_DELAY:
+                part_r_i = 2
+            elif part_r_i == 2:
+                part_r_i = 0
+            elif part_r_i == 3 and not part_l_state and not part_r_state:
+                part_r_i = 0
 
-                    if part_l_i == 2 and part_r_i == 0:
-                        sycam.save_frame(part_l_frame, metadata_l+['single'])
-                        part_l_i = 0
-                        part_r_i = 0
-                    elif part_r_i == 2 and part_l_i == 0:
-                        sycam.save_frame(part_r_frame, metadata_r+['single'])
-                        part_l_i = 0
-                        part_r_i = 0
+            if part_l_i == 2 and part_r_i == 0:
+                sycam.save_frame(part_l_frame, metadata_l+['single'])
+            elif part_r_i == 2 and part_l_i == 0:
+                sycam.save_frame(part_r_frame, metadata_r+['single'])
 
             # Print.
-            print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) - R {level_r:3} ({thr_r}) - {glstate}")
+            print(f"{dt_str} - {state} - {mode} - L {level_l:3} ({thr_l}) {part_l_state} {part_l_i} - R {level_r:3} ({thr_r}) {part_r_state} {part_r_i} - {glstate}")
 
     except Exception as e:
         vc.release()
