@@ -3,10 +3,11 @@ from datetime import timedelta
 from os import getenv
 from pathlib import Path
 import sys
+import traceback
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 
 import sycam
 import sycfg as c
@@ -32,8 +33,21 @@ ADMIN_ID = getenv("ADMIN_ID")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot=bot)
 
+main_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text=f'{c.EMODJI_INFO} STATE'),
+            KeyboardButton(text=f'{c.EMODJI_FRAME} FRAME')
+        ],
+        [
+            KeyboardButton(text=f'{c.EMODJI_STATS} STATISTICS')
+        ],
+    ],
+    resize_keyboard=True,
+    input_field_placeholder="Type command...",
+)
+
 bot_public_cmds = [
-    ("/start", "start bot"),
     ("/help", "show commands"),
     ("/state", "show system state"),
     ("/frame", "show current frame"),
@@ -51,12 +65,24 @@ bot_admin_cmds = [
     ("/updatethr", "set level thresholds"),
 ]
 
+async def try_send_msg(dest_id, text):
+    try:
+        await bot.send_message(dest_id, text, reply_markup=main_kb)
+    except:
+        print(f"Failed to send message!\nText:\n{text}\n")
+
+async def try_reply(msg, text):
+    try:
+        await msg.reply(text, reply_markup=main_kb)
+    except:
+        print(f"Failed to reply!\nText:\n{text}\n")
+
 async def is_from_group(msg, notify=False):
     if str(msg.chat.id) == CHAT_ID:
         return True
 
     if notify:
-        await msg.reply(f"{c.EMODJI_WARNING} Bot can be used in its dedicated group only.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Bot can be used in its dedicated group only.")
 
     return False
 
@@ -65,10 +91,9 @@ async def is_from_admin(msg, notify=False):
         return True
 
     if notify:
-        await msg.reply(f"{c.EMODJI_WARNING} Command can be used by admin only.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Command can be used by admin only.")
 
     return False
-
 
 async def system_is_on(msg, notify=False):
     state = systate.get()
@@ -76,7 +101,7 @@ async def system_is_on(msg, notify=False):
         return True
 
     if notify:
-        await msg.reply(f"{c.EMODJI_WARNING} System is {systate.OFF}.\nUse command /on to turn it {systate.ON} first.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} System is {systate.OFF}.\nUse command /on to turn it {systate.ON} first.")
 
     return False
 
@@ -86,36 +111,38 @@ async def mode_is_manual(msg, notify=False):
         return True
 
     if notify:
-        await msg.reply(f"{c.EMODJI_WARNING} Mode is {symode.AUTO}.\nUse command /manual to enable {symode.MANUAL} mode first.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Mode is {symode.AUTO}.\nUse command /manual to enable {symode.MANUAL} mode first.")
 
     return False
 
 async def send_frame(fpath, caption, rename=True):
     file = FSInputFile(fpath)
-    await bot.send_photo(CHAT_ID, file, caption=caption)
+     
+    try:
+        await bot.send_photo(CHAT_ID, file, caption=caption)
+    except:
+        return
 
     if rename:
         fname_new = fpath.name.replace('-', '')
         fpath_new = fpath.parent / fname_new
         syfiles.move_file(fpath, fpath_new)
 
-async def send_ping():
+async def send__ping():
     await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     text = "Ping"
     delta = timedelta(minutes=1)
-
-    await bot.send_message(ADMIN_ID, text)
-    next_dt = sydt.now() + delta
+    next_dt = sydt.now() - delta
 
     while True:
         if sydt.now() > next_dt:
-            await bot.send_message(ADMIN_ID, text)
             next_dt = sydt.now() + delta
+            await try_send_msg(ADMIN_ID, text)
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(c.BOT_DELAY_LOOP)
 
-async def send_on_states():
+async def send__states_update():
     await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     light_state = sylight.get()
@@ -124,8 +151,6 @@ async def send_on_states():
     thr_l, thr_r = sythr.get()
 
     while True:
-        await asyncio.sleep(1)
-
         prev_state = state
         state = systate.get()
         if prev_state != state:
@@ -133,7 +158,7 @@ async def send_on_states():
                 state_emodji = c.EMODJI_GREEN_CIRCLE
             else:
                 state_emodji = c.EMODJI_RED_CIRCLE
-            await bot.send_message(CHAT_ID, f"{state_emodji} System is {state} now.")
+            await try_send_msg(CHAT_ID, f"{state_emodji} System is {state} now.")
 
         if state == systate.ON:
             prev_light_state = light_state
@@ -143,7 +168,7 @@ async def send_on_states():
                     light_state_emodji = c.EMODJI_SUN
                 else:
                     light_state_emodji = c.EMODJI_MOON
-                await bot.send_message(CHAT_ID, f"{light_state_emodji} Light is {light_state} now.")
+                await try_send_msg(CHAT_ID, f"{light_state_emodji} Light is {light_state} now.")
 
         prev_mode = mode
         mode = symode.get()
@@ -152,20 +177,20 @@ async def send_on_states():
                 mode_emodji = c.EMODJI_MANUAL
             else:
                 mode_emodji = c.EMODJI_AUTO  
-            await bot.send_message(CHAT_ID, f"{mode_emodji} {mode} mode enabled now.")
+            await try_send_msg(CHAT_ID, f"{mode_emodji} {mode} mode enabled now.")
 
         prev_thr_l = thr_l
         prev_thr_r = thr_r
         thr_l, thr_r = sythr.get()
         if (prev_thr_l != thr_l) or (prev_thr_r != thr_r):
-            await bot.send_message(CHAT_ID, f"{c.EMODJI_CHECKMARK} Thresholds are {thr_l} and {thr_r} now.")
+            await try_send_msg(CHAT_ID, f"{c.EMODJI_CHECKMARK} Thresholds are {thr_l} and {thr_r} now.")
+        
+        await asyncio.sleep(c.BOT_DELAY_LOOP)
 
-async def send_on_frames():
+async def send__new_frames():
     await asyncio.sleep(c.BOT_DELAY_ON_START)
 
     while True:
-        await asyncio.sleep(1)
-
         files = sorted(syfiles.frames_dpath.glob(f"frame*-.{c.PICTURE_EXT}"))
         if len(files) > 0:
             fpath = files[0]
@@ -188,28 +213,21 @@ async def send_on_frames():
             caption = f"{caption}\nThresholds: {level_l} ({thr_l}), {level_r} ({thr_r})\nTimestamp: {dt_str}"
             await send_frame(fpath, caption)
 
-@dp.message(Command('start'))
-async def cmd__start(message: Message):
-    if not await is_from_group(message, notify=True):
-        return
+        await asyncio.sleep(c.BOT_DELAY_LOOP)
 
-    await message.reply(f"{c.EMODJI_START} Welcome!\nUse /help to show available commands.")
+@dp.message(Command('start'))
+async def cmd__start(msg: Message):
+    await try_reply(msg, f"{c.EMODJI_START} Welcome!\nUse /help to show available commands.")
 
 @dp.message(Command('help'))
-async def cmd__help(message: Message):
-    if not await is_from_group(message, notify=True):
-        return
-
+async def cmd__help(msg: Message):
     bot_public_cmds_text = "\n".join([f"{cmd} - {description}" for (cmd, description) in bot_public_cmds])
     bot_admin_cmds_text = "\n".join([f"{cmd} - {description}" for (cmd, description) in bot_admin_cmds])
     text = f"{c.EMODJI_GLASS} I am Smart Glass Bot.\n\nPublic commands:\n{bot_public_cmds_text}\n\nAdmin commands:\n{bot_admin_cmds_text}"
-    await message.reply(text)
+    await try_reply(msg, text)
 
 @dp.message(Command('state'))
-async def cmd__state(message: Message):
-    if not await is_from_group(message):
-        return
-
+async def cmd__state(msg: Message):
     t_cpu = sytemp.get()
 
     state = systate.get()
@@ -249,26 +267,26 @@ async def cmd__state(message: Message):
             f"{mode_emodji} Mode: {mode}\n"
             f"{glstate_emodji} Glass: {glstate}")
 
-    await message.reply(text)
+    await try_reply(msg, text)
 
 @dp.message(Command('frame'))
-async def cmd__frame(message: Message):
-    if not await is_from_group(message):
+async def cmd__frame(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await system_is_on(message, notify=True):
+    if not await system_is_on(msg, notify=True):
         return
 
     sycam.save_frame_request()
-    await message.reply(f"{c.EMODJI_REQUEST} Frame requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Frame requested.")
 
 @dp.message(Command('ref'))
-async def cmd__ref(message: Message):
-    if not await is_from_group(message):
+async def cmd__ref(msg: Message):
+    if not await is_from_group(msg):
         return
 
     if not syfiles.reference_frame_fpath.is_file():
-        await message.answer(f"{c.EMODJI_WARNING} No reference frames found.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} No reference frames found.")
         return
 
     dt_str = sydt.get_str(pattern='nice')
@@ -276,166 +294,167 @@ async def cmd__ref(message: Message):
     await send_frame(syfiles.reference_frame_fpath, caption, rename=False)
 
 @dp.message(Command('on'))
-async def cmd__on(message: Message):
-    if not await is_from_group(message):
+async def cmd__on(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
     state = systate.get()
     if state == systate.ON:
-        await message.reply(f"{c.EMODJI_WARNING} System is already {state}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} System is already {state}.")
         return
 
     systate.set_request(systate.ON)
-    await message.reply(f"{c.EMODJI_REQUEST} Turning system {systate.ON} requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Turning system {systate.ON} requested.")
 
 @dp.message(Command('off'))
-async def cmd__off(message: Message):
-    if not await is_from_group(message):
+async def cmd__off(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
     state = systate.get()
     if state == systate.OFF:
-        await message.reply(f"{c.EMODJI_WARNING} System is already {state}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} System is already {state}.")
         return
 
     systate.set_request(systate.OFF)
-    await message.reply(f"{c.EMODJI_REQUEST} Turning system {systate.OFF} requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Turning system {systate.OFF} requested.")
 
 @dp.message(Command('manual'))
-async def cmd__manual(message: Message):
-    if not await is_from_group(message):
+async def cmd__manual(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
     mode = symode.get()
     if mode == symode.MANUAL:
-        await message.reply(f"{c.EMODJI_WARNING} Mode is already {mode}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Mode is already {mode}.")
         return
 
     symode.set_request(symode.MANUAL)
-    await message.reply(f"{c.EMODJI_REQUEST} {symode.MANUAL} mode requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} {symode.MANUAL} mode requested.")
 
 @dp.message(Command('auto'))
-async def cmd__auto(message: Message):
-    if not await is_from_group(message):
+async def cmd__auto(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
     mode = symode.get()
     if mode == symode.AUTO:
-        await message.reply(f"{c.EMODJI_WARNING} Mode is already {mode}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Mode is already {mode}.")
         return
 
     symode.set_request(symode.AUTO)
-    await message.reply(f"{c.EMODJI_REQUEST} {symode.AUTO} mode requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} {symode.AUTO} mode requested.")
 
 @dp.message(Command('glon'))
-async def cmd__glon(message: Message):
-    if not await is_from_group(message):
+async def cmd__glon(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
-    if not await system_is_on(message, notify=True):
+    if not await system_is_on(msg, notify=True):
         return
 
-    if not await mode_is_manual(message, notify=True):
+    if not await mode_is_manual(msg, notify=True):
         return
 
     glstate = syglstate.get()
     if glstate == syglstate.ON:
-        await message.reply(f"{c.EMODJI_WARNING} Glass is already {glstate}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Glass is already {glstate}.")
         return
 
     syglstate.set_request(syglstate.ON)
-    await message.reply(f"{c.EMODJI_REQUEST} Turning glass {syglstate.ON} requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Turning glass {syglstate.ON} requested.")
 
 @dp.message(Command('gloff'))
-async def cmd__gloff(message: Message):
-    if not await is_from_group(message):
+async def cmd__gloff(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
-    if not await system_is_on(message, notify=True):
+    if not await system_is_on(msg, notify=True):
         return
 
-    if not await mode_is_manual(message, notify=True):
+    if not await mode_is_manual(msg, notify=True):
         return
 
     glstate = syglstate.get()
     if glstate == syglstate.OFF:
-        await message.reply(f"{c.EMODJI_WARNING} Glass is already {glstate}.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Glass is already {glstate}.")
         return
 
     syglstate.set_request(syglstate.OFF)
-    await message.reply(f"{c.EMODJI_REQUEST} Turning glass {syglstate.OFF} requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Turning glass {syglstate.OFF} requested.")
 
 @dp.message(Command('updateref'))
-async def cmd__updateref(message: Message):
-    if not await is_from_group(message):
+async def cmd__updateref(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
-    if not await system_is_on(message, notify=True):
+    if not await system_is_on(msg, notify=True):
         return
 
     sycam.update_save_reference_frame_request()
-    await message.reply(f"{c.EMODJI_REQUEST} Update reference frame requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Update reference frame requested.")
 
 @dp.message(Command('updatethr'))
-async def cmd__updatethr(message: Message):
-    if not await is_from_group(message):
+async def cmd__updatethr(msg: Message):
+    if not await is_from_group(msg):
         return
 
-    if not await is_from_admin(message, notify=True):
+    if not await is_from_admin(msg, notify=True):
         return
 
-    if not await system_is_on(message, notify=True):
+    if not await system_is_on(msg, notify=True):
         return
     
     try:
-        text = message.text
-        l = text.split()
+        l = msg.text.split()
         if len(l) != 2 or l[0] != '/updatethr':
             raise Exception
         l = l[1].split(',')
         thr_l = int(l[0])
         thr_r = int(l[1])
     except:
-        await message.reply(f"{c.EMODJI_WARNING} Invalid arguments.")
+        await try_reply(msg, f"{c.EMODJI_WARNING} Invalid arguments.")
         return
 
     sythr.update_thresholds_request(thr_l, thr_r)
-    await message.reply(f"{c.EMODJI_REQUEST} Update thresholds requested.")
+    await try_reply(msg, f"{c.EMODJI_REQUEST} Update thresholds requested.")
 
 #@dp.message()
-#async def cmd__any(message: Message):
-    #await message.answer("Answered")
+#async def cmd__any(msg: Message):
+    #await try_reply(msg, "Answered")
 
 async def main():
-    await bot.send_message(CHAT_ID, f"{c.EMODJI_CHECKMARK} Smart Glass Bot started.")
+    start_text = "Smart Glass Bot started"
 
-    asyncio.create_task(send_ping())
-    asyncio.create_task(send_on_states())
-    asyncio.create_task(send_on_frames())
+    await try_send_msg(ADMIN_ID, f"{c.EMODJI_CHECKMARK} {start_text}.")
+
+    asyncio.create_task(send__ping())
+    asyncio.create_task(send__states_update())
+    asyncio.create_task(send__new_frames())
 
     await dp.start_polling(bot)
-    
+
 
 if __name__ == '__main__':
     syfiles.prepare_folders(clean=False)

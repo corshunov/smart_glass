@@ -1,4 +1,5 @@
 from datetime import timedelta
+import traceback
 
 import cv2
 
@@ -268,7 +269,6 @@ if __name__ == '__main__':
         log("end")
         print('\nExit\n')
     except Exception as e:
-        import traceback
         tb = traceback.format_exc()
         log("error")
         print(tb)
